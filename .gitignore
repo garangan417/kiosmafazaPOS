@@ -1,0 +1,17 @@
+# SQLite Database
+*.db
+*.sqlite
+*.sqlite3
+
+
+
+# Log
+*.log
+
+# Backup
+*.bak
+
+# Temporary
+*.tmp
+database/*.sqlite
+catata.txt
