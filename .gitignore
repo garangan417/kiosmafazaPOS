@@ -15,4 +15,4 @@
 *.tmp
 database/*.sqlite
 catata.txt
-adminer/*.php
+adminer/
