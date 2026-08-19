@@ -1,18 +1,9 @@
-# SQLite Database
-*.db
-*.sqlite
-*.sqlite3
-
-
-
-# Log
-*.log
-
-# Backup
-*.bak
-
-# Temporary
-*.tmp
+# Hanya ignore file database SQLite saja
 database/*.sqlite
-catata.txt
+*.sqlite
+*.db
+
+# Ignore file/folder lain yang tidak perlu
 adminer/
+catata.txt
+*.log
