@@ -20,10 +20,16 @@ require_once BASE_PATH . 'partials/header.php';
     <div class="col-lg-7">
       <div class="card border-0 shadow-sm mb-3">
         <div class="card-body p-3">
-          <label class="form-label fw-bold mb-1">
-            <i class="bi bi-upc-scan text-primary me-1"></i> Cari / Scan Barcode Barang
-          </label>
-          <div class="input-group input-group-lg">
+          <div class="d-flex justify-content-between align-items-center mb-1">
+            <label class="form-label fw-bold mb-0">
+              <i class="bi bi-upc-scan text-primary me-1"></i> Cari / Scan Barcode Barang
+            </label>
+            <!-- TOMBOL UNTUK MEMBUKA MODAL TRANSAKSI JASA / PPOB -->
+            <button type="button" class="btn btn-sm btn-outline-success fw-bold" onclick="openModalJasa()">
+              <i class="bi bi-plus-circle me-1"></i> Transaksi Jasa / PPOB
+            </button>
+          </div>
+          <div class="input-group input-group-lg mt-2">
             <input type="text" id="inputScan" class="form-control font-monospace" placeholder="Scan Barcode atau ketik nama barang..." autofocus autocomplete="off">
             <!-- TOMBOL KAMERA KHUSUS MOBILE / TABLET -->
             <button class="btn btn-primary px-3" type="button" id="btnStartCamera" onclick="openCameraScanner()" title="Buka Kamera HP">
@@ -70,7 +76,7 @@ require_once BASE_PATH . 'partials/header.php';
           <table class="table table-hover align-middle mb-0" id="cartTable">
             <thead class="table-light sticky-top">
               <tr>
-                <th>Nama Barang</th>
+                <th>Nama Barang / Layanan</th>
                 <th style="width: 130px;">Harga Jual</th>
                 <th style="width: 110px;" class="text-center">Qty</th>
                 <th class="text-end">Subtotal</th>
@@ -125,6 +131,46 @@ require_once BASE_PATH . 'partials/header.php';
       </div>
     </div>
 
+  </div>
+</div>
+
+<!-- ========================================== -->
+<!-- MODAL TRANSAKSI JASA / PPOB               -->
+<!-- ========================================== -->
+<div class="modal fade" id="modalTransaksiJasa" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content border-0 shadow">
+      <div class="modal-header bg-success text-white py-2">
+        <h6 class="modal-title fw-bold"><i class="bi bi-wallet2 me-2"></i>Input Transaksi Jasa / PPOB</h6>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" onclick="resetFocusScan()"></button>
+      </div>
+      <div class="modal-body p-3">
+        <form id="formJasa" onsubmit="event.preventDefault(); tambahJasaKeKeranjang();">
+          <div class="mb-3">
+            <label class="form-label small fw-bold">Kategori Layanan</label>
+            <select id="jasaKategori" class="form-select" required>
+              <option value="Transfer Uang">Transfer Uang</option>
+              <option value="Tarik Tunai">Tarik Tunai</option>
+              <option value="Topup E-Wallet">Topup E-Wallet</option>
+              <option value="Pulsa & Data">Pulsa & Data</option>
+              <option value="Token PLN">Token PLN</option>
+              <option value="Lain-lain">Lain-lain</option>
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-bold">Keterangan / Nama Layanan</label>
+            <input type="text" id="jasaKeterangan" class="form-control" placeholder="Contoh: Transfer BRI a/n Budi / Topup Dana" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-bold">Nominal / Total Biaya (Rp)</label>
+            <input type="number" id="jasaNominal" class="form-control font-monospace fw-bold" placeholder="0" min="1" required>
+          </div>
+          <button type="submit" class="btn btn-success w-100 fw-bold">
+            <i class="bi bi-cart-plus me-1"></i> Tambahkan ke Keranjang
+          </button>
+        </form>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -345,6 +391,49 @@ document.addEventListener("DOMContentLoaded", function() {
 });
 
 // ==========================================
+// TRANSAKSI JASA / PPOB
+// ==========================================
+function openModalJasa() {
+  document.getElementById('formJasa').reset();
+  let modalJasa = new bootstrap.Modal(document.getElementById('modalTransaksiJasa'));
+  modalJasa.show();
+}
+
+function tambahJasaKeKeranjang() {
+  let kategori = document.getElementById('jasaKategori').value;
+  let keterangan = document.getElementById('jasaKeterangan').value.trim();
+  let nominal = parseFloat(document.getElementById('jasaNominal').value) || 0;
+
+  if (nominal <= 0) {
+    alert('Nominal transaksi harus lebih dari 0!');
+    return;
+  }
+
+  let itemJasa = {
+    kemasan_id: 0,
+    nama_barang: keterangan,
+    nama_kemasan: kategori,
+    satuan: 'trx',
+    harga_beli: 0,
+    harga_jual: nominal,
+    harga_ecer: nominal,
+    qty: 1,
+    subtotal: nominal,
+    is_jasa: true,
+    kategori: kategori,
+    keterangan: keterangan
+  };
+
+  addToCart(itemJasa);
+
+  let modalElem = document.getElementById('modalTransaksiJasa');
+  let modalJasa = bootstrap.Modal.getInstance(modalElem);
+  if (modalJasa) modalJasa.hide();
+
+  resetFocusScan();
+}
+
+// ==========================================
 // INTEGRASI KAMERA BARCODE SCANNER
 // ==========================================
 function openCameraScanner() {
@@ -356,7 +445,7 @@ function openCameraScanner() {
     const config = { fps: 10, qrbox: { width: 250, height: 150 } };
 
     html5QrCode.start(
-      { facingMode: "environment" }, // Gunakan Kamera Belakang HP
+      { facingMode: "environment" },
       config,
       onScanSuccess
     ).catch(err => {
@@ -367,13 +456,11 @@ function openCameraScanner() {
 }
 
 function onScanSuccess(decodedText, decodedResult) {
-  // Tutup Kamera & Modal
   stopCameraScanner();
   let modalCamElem = document.getElementById('modalCameraScanner');
   let modalCam = bootstrap.Modal.getInstance(modalCamElem);
   if (modalCam) modalCam.hide();
 
-  // Masukkan hasil scan ke input lalu proses pencarian
   document.getElementById('inputScan').value = decodedText;
   processSearch(decodedText);
 }
@@ -446,20 +533,25 @@ function selectFromDropdown(item) {
 }
 
 function addToCart(item) {
-  let existingIndex = cart.findIndex(c => c.kemasan_id === item.kemasan_id);
+  let isJasa = item.is_jasa || false;
+  let existingIndex = cart.findIndex(c => isJasa ? (c.is_jasa && c.keterangan === item.keterangan) : (c.kemasan_id === item.kemasan_id));
+
   if (existingIndex > -1) {
     cart[existingIndex].qty += 1;
     cart[existingIndex].subtotal = cart[existingIndex].qty * cart[existingIndex].harga_jual;
   } else {
     cart.push({
-      kemasan_id: item.kemasan_id,
+      kemasan_id: item.kemasan_id || 0,
       nama_barang: item.nama_barang,
       nama_kemasan: item.nama_kemasan,
-      satuan: item.satuan,
-      harga_beli: item.harga_beli,
-      harga_jual: item.harga_ecer,
-      qty: 1,
-      subtotal: item.harga_ecer
+      satuan: item.satuan || 'pcs',
+      harga_beli: item.harga_beli || 0,
+      harga_jual: item.harga_jual || item.harga_ecer,
+      qty: item.qty || 1,
+      subtotal: item.subtotal || item.harga_ecer,
+      is_jasa: isJasa,
+      kategori: item.kategori || 'PPOB / Jasa',
+      keterangan: item.keterangan || item.nama_barang
     });
   }
   renderCart();
@@ -705,7 +797,14 @@ function prosesCheckout() {
 
   let kembalian = bayar - total;
 
+  let today = new Date();
+  let yyyy = today.getFullYear();
+  let mm = String(today.getMonth() + 1).padStart(2, '0');
+  let dd = String(today.getDate()).padStart(2, '0');
+  let tglForm = `${yyyy}-${mm}-${dd}`;
+
   let payload = {
+    tanggal: tglForm,
     total_kotor: total,
     diskon: 0,
     total_bersih: total,

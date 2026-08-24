@@ -113,11 +113,38 @@ $current_page = $_SERVER['REQUEST_URI'];
           <a class="nav-link <?= stristr($current_page, '/pelanggan/') ? 'active' : ''; ?>" 
              href="<?= BASE_URL; ?>pelanggan/">Pelanggan</a>
         </li>
-
-        <!-- Menu Utang / Piutang -->
-        <li class="nav-item">
-          <a class="nav-link <?= stristr($current_page, '/keuangan/') ? 'active' : ''; ?>" 
-             href="<?= BASE_URL; ?>keuangan/">Transaksi</a>
+        
+         <!-- Dropdown PPOB -->
+        <li class="nav-item dropdown">
+          <a class="nav-link dropdown-toggle <?= stristr($current_page, '/keuangan/') ? 'active' : ''; ?>" 
+             href="#" 
+             id="navbarDropdownBarang" 
+             role="button" 
+             data-bs-toggle="dropdown" 
+             aria-expanded="false">
+            PPOB
+          </a>
+          <ul class="dropdown-menu dropdown-menu-dark" aria-labelledby="navbarDropdownBarang">
+            <li>
+              <a class="dropdown-item <?= (stristr($current_page, '/keuangan/') && !stristr($current_page, 'index.php') && !stristr($current_page, 'kategori.php')) ? 'active' : ''; ?>" 
+                 href="<?= BASE_URL; ?>keuangan/">
+                <i class="bi bi-box-seam me-2"></i>Data PPOB
+              </a>
+            </li>
+            <li>
+              <a class="dropdown-item <?= stristr($current_page, 'laporan.php') ? 'active' : ''; ?>" 
+                 href="<?= BASE_URL; ?>keuangan/laporan.php">
+                <i class="bi bi-tags me-2"></i>Laporan PPOB
+              </a>
+            </li>
+            <li><hr class="dropdown-divider"></li>
+            <li>
+              <a class="dropdown-item <?= stristr($current_page, 'index.php') ? 'active' : ''; ?>" 
+                 href="<?= BASE_URL; ?>keuangan/index.php">
+                <i class="bi bi-tag me-2"></i>====
+              </a>
+            </li>
+          </ul>
         </li>
 
         <!-- Dropdown Kelola Barang -->

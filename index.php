@@ -85,14 +85,8 @@ require_once BASE_PATH . 'partials/header.php';
 
   <!-- Header Dashboard -->
   <div class="d-flex align-items-center justify-content-between mb-4">
-    <div>
-      <h3 class="fw-bold mb-0">Dashboard Kios</h3>
-      <p class="text-muted small mb-0">Ringkasan kas dan rekap piutang pelanggan</p>
-    </div>
-    <a href="<?= BASE_URL; ?>pelanggan/" class="btn btn-dark d-flex align-items-center gap-2">
-      <i class="bi bi-people-fill"></i>
-      <span>Kelola Pelanggan</span>
-    </a>
+    
+    
   </div>
 
   <!-- Cards Stat Top Summary -->
