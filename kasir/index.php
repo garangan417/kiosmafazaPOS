@@ -10,6 +10,9 @@ $barangFavorit = getBarangFavorit($pdoBarang);
 require_once BASE_PATH . 'partials/header.php';
 ?>
 
+<!-- HTML5-QRCode JS Library via CDN -->
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+
 <div class="container-fluid my-3 px-4">
   <div class="row g-3">
     
@@ -22,6 +25,10 @@ require_once BASE_PATH . 'partials/header.php';
           </label>
           <div class="input-group input-group-lg">
             <input type="text" id="inputScan" class="form-control font-monospace" placeholder="Scan Barcode atau ketik nama barang..." autofocus autocomplete="off">
+            <!-- TOMBOL KAMERA KHUSUS MOBILE / TABLET -->
+            <button class="btn btn-primary px-3" type="button" id="btnStartCamera" onclick="openCameraScanner()" title="Buka Kamera HP">
+              <i class="bi bi-camera-fill fs-5"></i>
+            </button>
             <button class="btn btn-outline-secondary" type="button" onclick="clearScan()"><i class="bi bi-x-lg"></i></button>
           </div>
           <!-- Dropdown Autocomplete Hasil Pencarian Nama -->
@@ -122,7 +129,28 @@ require_once BASE_PATH . 'partials/header.php';
 </div>
 
 <!-- ========================================== -->
-<!-- MODAL PENGELOLA BARANG FAVORIT (NEW / RESTORED) -->
+<!-- MODAL KAMERA BARCODE SCANNER (MOBILE)      -->
+<!-- ========================================== -->
+<div class="modal fade" id="modalCameraScanner" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content border-0 shadow">
+      <div class="modal-header bg-primary text-white py-2">
+        <h6 class="modal-title fw-bold"><i class="bi bi-camera-fill me-2"></i>Scan Barcode Kamera HP</h6>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" onclick="stopCameraScanner()"></button>
+      </div>
+      <div class="modal-body p-3 text-center">
+        <div id="reader" style="width: 100%; min-height: 250px; background: #f8f9fa; rounded: 8px;"></div>
+        <small class="text-muted d-block mt-2">Arahkan kamera ke barcode barang</small>
+      </div>
+      <div class="modal-footer py-2 bg-light">
+        <button type="button" class="btn btn-sm btn-secondary w-100 fw-bold" data-bs-dismiss="modal" onclick="stopCameraScanner()">Tutup Kamera</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ========================================== -->
+<!-- MODAL PENGELOLA BARANG FAVORIT             -->
 <!-- ========================================== -->
 <div class="modal fade" id="modalKelolaFavorit" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
   <div class="modal-dialog modal-dialog-centered modal-lg">
@@ -160,7 +188,7 @@ require_once BASE_PATH . 'partials/header.php';
 </div>
 
 <!-- ========================================== -->
-<!-- MODAL BARCODE TIDAK DITEMUKAN -->
+<!-- MODAL BARCODE TIDAK DITEMUKAN             -->
 <!-- ========================================== -->
 <div class="modal fade" id="modalNotFound" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
   <div class="modal-dialog modal-dialog-centered">
@@ -236,7 +264,6 @@ require_once BASE_PATH . 'partials/header.php';
       </div>
       
       <div class="modal-body p-2">
-        <!-- AREA STRUK YANG AKAN DICETAK -->
         <div id="receiptArea" class="receipt-58mm">
           <div class="text-center mb-2">
             <h5 class="fw-bold mb-0 text-uppercase">KIOS MAFAZA</h5>
@@ -253,7 +280,6 @@ require_once BASE_PATH . 'partials/header.php';
 
           <div class="border-top-dashed my-2"></div>
 
-          <!-- LIST ITEM -->
           <table class="w-100 small receipt-table">
             <tbody id="receiptItems">
               <!-- Item dimasukkan via JS -->
@@ -262,7 +288,6 @@ require_once BASE_PATH . 'partials/header.php';
 
           <div class="border-top-dashed my-2"></div>
 
-          <!-- RINGKASAN TOTAL -->
           <div class="small fw-bold">
             <div class="d-flex justify-content-between">
               <span>Total:</span>
@@ -301,6 +326,7 @@ require_once BASE_PATH . 'partials/header.php';
 let cart = [];
 let scannedBarcode = '';
 let isFavoritChanged = false;
+let html5QrCode = null;
 
 document.addEventListener("DOMContentLoaded", function() {
   const inputScan = document.getElementById('inputScan');
@@ -317,6 +343,49 @@ document.addEventListener("DOMContentLoaded", function() {
     }
   });
 });
+
+// ==========================================
+// INTEGRASI KAMERA BARCODE SCANNER
+// ==========================================
+function openCameraScanner() {
+  let modalCam = new bootstrap.Modal(document.getElementById('modalCameraScanner'));
+  modalCam.show();
+
+  setTimeout(() => {
+    html5QrCode = new Html5Qrcode("reader");
+    const config = { fps: 10, qrbox: { width: 250, height: 150 } };
+
+    html5QrCode.start(
+      { facingMode: "environment" }, // Gunakan Kamera Belakang HP
+      config,
+      onScanSuccess
+    ).catch(err => {
+      alert("Gagal membuka kamera: " + err);
+      stopCameraScanner();
+    });
+  }, 300);
+}
+
+function onScanSuccess(decodedText, decodedResult) {
+  // Tutup Kamera & Modal
+  stopCameraScanner();
+  let modalCamElem = document.getElementById('modalCameraScanner');
+  let modalCam = bootstrap.Modal.getInstance(modalCamElem);
+  if (modalCam) modalCam.hide();
+
+  // Masukkan hasil scan ke input lalu proses pencarian
+  document.getElementById('inputScan').value = decodedText;
+  processSearch(decodedText);
+}
+
+function stopCameraScanner() {
+  if (html5QrCode && html5QrCode.isScanning) {
+    html5QrCode.stop().then(() => {
+      html5QrCode.clear();
+      resetFocusScan();
+    }).catch(err => console.error(err));
+  }
+}
 
 // Proses pencarian utama (Scan Exact atau Enter)
 function processSearch(q) {
@@ -419,7 +488,6 @@ function renderCart() {
           </td>
           <td class="text-end font-monospace fw-bold">Rp ${Math.round(item.subtotal).toLocaleString('id-ID')}</td>
           <td class="text-center">
-            <!-- TOMBOL HAPUS ITEM -->
             <button class="btn btn-sm btn-outline-danger px-2 py-1" onclick="removeItem(${index})" title="Hapus item ini">
               <i class="bi bi-trash"></i>
             </button>
@@ -555,7 +623,7 @@ function closeKelolaFavorit() {
 }
 
 // ==========================================
-// KODE TAMBAHAN UNTUK INTEGRASI BARCODE BARU
+// INTEGRASI BARCODE BARU
 // ==========================================
 function redirectToCreateBarang() {
   window.location.href = '../barang/?barcode=' + encodeURIComponent(scannedBarcode);
@@ -631,14 +699,12 @@ function prosesCheckout() {
     return;
   }
 
-  // Disable tombol checkout saat proses kirim data
   let btnCheckout = document.getElementById('btnCheckout');
   btnCheckout.disabled = true;
   btnCheckout.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Menyimpan Transaksi...';
 
   let kembalian = bayar - total;
 
-  // Susun payload persis dengan kebutuhan api_checkout.php
   let payload = {
     total_kotor: total,
     diskon: 0,
@@ -650,7 +716,6 @@ function prosesCheckout() {
     items: cart
   };
 
-  // Kirim data ke backend API via fetch
   fetch('api_checkout.php', {
     method: 'POST',
     headers: {
@@ -660,22 +725,17 @@ function prosesCheckout() {
   })
   .then(res => res.json())
   .then(res => {
-    // Kembalikan tombol ke keadaan semula
     btnCheckout.disabled = false;
     btnCheckout.innerHTML = '<i class="bi bi-printer me-2"></i> SIMPAN & PROSES';
 
-    // Periksa status respon dari backend (simpanPenjualan)
     if (res.status === true) {
-      // 1. Isikan data ke struk thermal modal
       let now = new Date();
       let tglStr = now.toLocaleDateString('id-ID') + ' ' + now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
 
-      // Menampilkan nomor faktur dari database
       document.getElementById('receiptNota').innerText = res.no_faktur || res.no_nota || 'TRX-' + Date.now();
       document.getElementById('receiptTanggal').innerText = tglStr;
       document.getElementById('receiptMetode').innerText = metode;
 
-      // 2. Render item barang di struk
       let itemsHtml = '';
       cart.forEach(item => {
         itemsHtml += `
@@ -689,12 +749,10 @@ function prosesCheckout() {
       });
       document.getElementById('receiptItems').innerHTML = itemsHtml;
 
-      // 3. Render ringkasan total di struk
       document.getElementById('receiptTotal').innerText = 'Rp ' + Math.round(total).toLocaleString('id-ID');
       document.getElementById('receiptBayar').innerText = 'Rp ' + Math.round(bayar).toLocaleString('id-ID');
       document.getElementById('receiptKembalian').innerText = 'Rp ' + Math.round(kembalian > 0 ? kembalian : 0).toLocaleString('id-ID');
 
-      // 4. Tampilkan Modal Struk & Reset Keranjang Belanja
       let modalStruk = new bootstrap.Modal(document.getElementById('modalStruk'));
       modalStruk.show();
 
