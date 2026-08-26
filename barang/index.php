@@ -54,7 +54,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
-    // 2. TAMBAH VARIAN KEMASAN BARU
+    // 2. EDIT MASTER BARANG (TERMASUK UBAH KATEGORI)
+    elseif ($action === 'edit_barang') {
+        $barang_id   = intval($_POST['barang_id'] ?? 0);
+        $kategori_id = intval($_POST['kategori_id'] ?? 0);
+        $nama_barang = mb_strtoupper(trim($_POST['nama_barang'] ?? ''));
+
+        if ($barang_id > 0 && $kategori_id > 0 && !empty($nama_barang)) {
+            try {
+                $stmt = $pdoBarang->prepare("UPDATE barang SET kategori_id = ?, nama_barang = ? WHERE id = ?");
+                $stmt->execute([$kategori_id, $nama_barang, $barang_id]);
+                $_SESSION['toast_success'] = "Data produk berhasil diperbarui!";
+            } catch (PDOException $e) {
+                $_SESSION['toast_error'] = "Gagal memperbarui produk: " . $e->getMessage();
+            }
+        } else {
+            $_SESSION['toast_error'] = "Kategori dan Nama Barang wajib diisi!";
+        }
+    }
+
+    // 3. EDIT KEMASAN BARANG
+    elseif ($action === 'edit_kemasan') {
+        $kemasan_id   = intval($_POST['kemasan_id'] ?? 0);
+        $nama_kemasan = mb_strtoupper(trim($_POST['nama_kemasan'] ?? ''));
+        $satuan       = mb_strtoupper(trim($_POST['satuan'] ?? 'PCS'));
+        $isi          = max(1, intval($_POST['isi'] ?? 1));
+
+        if ($kemasan_id > 0 && !empty($nama_kemasan) && !empty($satuan)) {
+            try {
+                $stmt = $pdoBarang->prepare("UPDATE barang_kemasan SET nama_kemasan = ?, satuan = ?, isi = ? WHERE id = ?");
+                $stmt->execute([$nama_kemasan, $satuan, $isi, $kemasan_id]);
+                $_SESSION['toast_success'] = "Detail kemasan berhasil diperbarui!";
+            } catch (PDOException $e) {
+                $_SESSION['toast_error'] = "Gagal memperbarui kemasan: " . $e->getMessage();
+            }
+        } else {
+            $_SESSION['toast_error'] = "Nama Kemasan dan Satuan wajib diisi!";
+        }
+    }
+
+    // 4. TAMBAH VARIAN KEMASAN BARU
     elseif ($action === 'add_kemasan') {
         $barang_id    = intval($_POST['barang_id'] ?? 0);
         $nama_kemasan = mb_strtoupper(trim($_POST['nama_kemasan'] ?? ''));
@@ -87,7 +126,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
-    // 3. TAMBAH BARCODE BARU KE KEMASAN ADA
+    // 5. TAMBAH BARCODE BARU KE KEMASAN ADA
     elseif ($action === 'add_barcode') {
         $kemasan_id = intval($_POST['kemasan_id'] ?? 0);
         $barcode    = trim($_POST['barcode'] ?? '');
@@ -108,7 +147,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
-    // 4. HAPUS KEMASAN SPESIFIK
+    // 6. HAPUS KEMASAN SPESIFIK
     elseif ($action === 'delete_kemasan') {
         $kemasan_id = intval($_POST['kemasan_id'] ?? 0);
         if ($kemasan_id > 0) {
@@ -122,7 +161,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
-    // 5. HAPUS MASTER BARANG TOTAL
+    // 7. HAPUS MASTER BARANG TOTAL
     elseif ($action === 'delete_barang') {
         $barang_id = intval($_POST['barang_id'] ?? 0);
         if ($barang_id > 0) {
@@ -235,7 +274,7 @@ require_once BASE_PATH . 'partials/header.php';
                 <th>Kategori</th>
                 <th>Isi / Satuan</th>
                 <th>Daftar Barcode</th>
-                <th class="text-center" style="width: 140px;">Aksi</th>
+                <th class="text-center" style="width: 170px;">Aksi</th>
               </tr>
             </thead>
             <tbody>
@@ -280,22 +319,36 @@ require_once BASE_PATH . 'partials/header.php';
                         <i class="bi bi-box-arrow-in-down"></i>
                       </button>
 
-                      <!-- 3. Tombol Hapus Varian Kemasan / Master Barang -->
+                      <!-- 3. Dropdown Menu Edit & Hapus -->
                       <div class="dropdown d-inline-block mb-1">
-                        <button class="btn btn-sm btn-outline-danger dropdown-toggle" type="button" data-bs-toggle="dropdown">
-                          <i class="bi bi-trash"></i>
+                        <button class="btn btn-sm btn-outline-dark dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                          <i class="bi bi-pencil-square"></i>
                         </button>
                         <ul class="dropdown-menu dropdown-menu-end shadow-sm small">
                           <li>
-                            <button class="dropdown-menu-item dropdown-item text-danger" 
+                            <button class="dropdown-item text-dark" 
+                                    data-bs-toggle="modal" 
+                                    data-bs-target="#modalEditBarang<?= $row['barang_id']; ?>">
+                              <i class="bi bi-pencil me-2 text-warning"></i>Edit Produk & Kategori
+                            </button>
+                          </li>
+                          <li>
+                            <button class="dropdown-item text-dark" 
+                                    data-bs-toggle="modal" 
+                                    data-bs-target="#modalEditKemasan<?= $row['kemasan_id']; ?>">
+                              <i class="bi bi-box-seam me-2 text-info"></i>Edit Kemasan Ini
+                            </button>
+                          </li>
+                          <li><hr class="dropdown-divider"></li>
+                          <li>
+                            <button class="dropdown-item text-danger" 
                                     data-bs-toggle="modal" 
                                     data-bs-target="#modalDelKemasan<?= $row['kemasan_id']; ?>">
                               <i class="bi bi-x-circle me-2"></i>Hapus Kemasan Ini
                             </button>
                           </li>
-                          <li><hr class="dropdown-divider"></li>
                           <li>
-                            <button class="dropdown-menu-item dropdown-item text-danger fw-bold" 
+                            <button class="dropdown-item text-danger fw-bold" 
                                     data-bs-toggle="modal" 
                                     data-bs-target="#modalDelBarang<?= $row['barang_id']; ?>">
                               <i class="bi bi-trash-fill me-2"></i>Hapus Master Produk
@@ -306,6 +359,83 @@ require_once BASE_PATH . 'partials/header.php';
                     </td>
                   </tr>
 
+                  <!-- MODAL EDIT MASTER PRODUK & KATEGORI -->
+                  <div class="modal fade" id="modalEditBarang<?= $row['barang_id']; ?>" tabindex="-1">
+                    <div class="modal-dialog modal-dialog-centered">
+                      <div class="modal-content">
+                        <div class="modal-header bg-dark text-white">
+                          <h6 class="modal-title fw-bold"><i class="bi bi-pencil-square me-2"></i>Edit Produk & Kategori</h6>
+                          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                        </div>
+                        <form action="" method="POST">
+                          <div class="modal-body text-start">
+                            <input type="hidden" name="action" value="edit_barang">
+                            <input type="hidden" name="barang_id" value="<?= $row['barang_id']; ?>">
+
+                            <div class="mb-3">
+                              <label class="form-label small fw-semibold">Kategori Produk</label>
+                              <select name="kategori_id" class="form-select" required>
+                                <option value="">-- Pilih Kategori --</option>
+                                <?php foreach ($listKategori as $kat): ?>
+                                  <option value="<?= $kat['id']; ?>" <?= ($kat['id'] == $row['kategori_id']) ? 'selected' : ''; ?>>
+                                    <?= htmlspecialchars($kat['nama_kategori']); ?>
+                                  </option>
+                                <?php endforeach; ?>
+                              </select>
+                            </div>
+
+                            <div class="mb-3">
+                              <label class="form-label small fw-semibold">Nama Barang Utama</label>
+                              <input type="text" name="nama_barang" class="form-control text-uppercase" value="<?= htmlspecialchars($row['nama_barang']); ?>" required>
+                            </div>
+                          </div>
+                          <div class="modal-footer">
+                            <button type="button" class="btn btn-light btn-sm" data-bs-dismiss="modal">Batal</button>
+                            <button type="submit" class="btn btn-dark btn-sm">Simpan Perubahan</button>
+                          </div>
+                        </form>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- MODAL EDIT KEMASAN INI -->
+                  <div class="modal fade" id="modalEditKemasan<?= $row['kemasan_id']; ?>" tabindex="-1">
+                    <div class="modal-dialog modal-dialog-centered">
+                      <div class="modal-content">
+                        <div class="modal-header bg-info text-white">
+                          <h6 class="modal-title fw-bold"><i class="bi bi-box-seam me-2"></i>Edit Varian Kemasan</h6>
+                          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                        </div>
+                        <form action="" method="POST">
+                          <div class="modal-body text-start">
+                            <input type="hidden" name="action" value="edit_kemasan">
+                            <input type="hidden" name="kemasan_id" value="<?= $row['kemasan_id']; ?>">
+
+                            <div class="row g-2 mb-3">
+                              <div class="col-7">
+                                <label class="form-label small fw-semibold">Nama Kemasan</label>
+                                <input type="text" name="nama_kemasan" class="form-control text-uppercase" value="<?= htmlspecialchars($row['nama_kemasan']); ?>" required>
+                              </div>
+                              <div class="col-5">
+                                <label class="form-label small fw-semibold">Satuan</label>
+                                <input type="text" name="satuan" class="form-control text-uppercase" value="<?= htmlspecialchars($row['satuan']); ?>" required>
+                              </div>
+                            </div>
+
+                            <div class="mb-3">
+                              <label class="form-label small fw-semibold">Isi per Kemasan</label>
+                              <input type="number" name="isi" class="form-control" value="<?= $row['isi']; ?>" min="1" required>
+                            </div>
+                          </div>
+                          <div class="modal-footer">
+                            <button type="button" class="btn btn-light btn-sm" data-bs-dismiss="modal">Batal</button>
+                            <button type="submit" class="btn btn-info text-white btn-sm">Simpan Kemasan</button>
+                          </div>
+                        </form>
+                      </div>
+                    </div>
+                  </div>
+
                   <!-- MODAL TAMBAH BARCODE -->
                   <div class="modal fade" id="modalBarcode<?= $row['kemasan_id']; ?>" tabindex="-1">
                     <div class="modal-dialog modal-dialog-centered modal-sm">
@@ -315,7 +445,7 @@ require_once BASE_PATH . 'partials/header.php';
                           <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                         </div>
                         <form action="" method="POST">
-                          <div class="modal-body">
+                          <div class="modal-body text-start">
                             <input type="hidden" name="action" value="add_barcode">
                             <input type="hidden" name="kemasan_id" value="<?= $row['kemasan_id']; ?>">
                             <p class="small text-muted mb-2">Item: <strong><?= htmlspecialchars($row['nama_barang'] . ' (' . $row['nama_kemasan'] . ')'); ?></strong></p>
@@ -338,7 +468,7 @@ require_once BASE_PATH . 'partials/header.php';
                           <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                         </div>
                         <form action="" method="POST">
-                          <div class="modal-body">
+                          <div class="modal-body text-start">
                             <input type="hidden" name="action" value="add_kemasan">
                             <input type="hidden" name="barang_id" value="<?= $row['barang_id']; ?>">
                             <p class="small text-muted mb-3">Untuk Barang: <strong><?= htmlspecialchars($row['nama_barang']); ?></strong></p>
@@ -381,7 +511,7 @@ require_once BASE_PATH . 'partials/header.php';
                           <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                         </div>
                         <form action="" method="POST">
-                          <div class="modal-body">
+                          <div class="modal-body text-start">
                             <input type="hidden" name="action" value="delete_kemasan">
                             <input type="hidden" name="kemasan_id" value="<?= $row['kemasan_id']; ?>">
                             <p class="small text-muted mb-0">Hapus kemasan <strong><?= htmlspecialchars($row['nama_barang'] . ' - ' . $row['nama_kemasan']); ?></strong>?</p>
@@ -404,7 +534,7 @@ require_once BASE_PATH . 'partials/header.php';
                           <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                         </div>
                         <form action="" method="POST">
-                          <div class="modal-body">
+                          <div class="modal-body text-start">
                             <input type="hidden" name="action" value="delete_barang">
                             <input type="hidden" name="barang_id" value="<?= $row['barang_id']; ?>">
                             <p class="small text-muted mb-0">Hapus produk <strong><?= htmlspecialchars($row['nama_barang']); ?></strong> beserta <strong>SELURUH kemasan & barcodenya</strong>?</p>
