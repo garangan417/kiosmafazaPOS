@@ -3,6 +3,9 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
+// Set zona waktu ke Indonesia
+date_default_timezone_set('Asia/Jakarta');
+
 require_once __DIR__ . '/../config.php';
 require_once BASE_PATH . 'database/db.php';
 
@@ -10,17 +13,18 @@ require_once BASE_PATH . 'database/db.php';
 $isHtmx = isset($_SERVER['HTTP_HX_REQUEST']);
 
 // Tangkap Parameter Filter (Default: Hari Ini)
-$tglAwal  = $_GET['tgl_awal'] ?? date('Y-m-d');
-$tglAkhir = $_GET['tgl_akhir'] ?? date('Y-m-d');
+$today    = date('Y-m-d');
+$tglAwal  = $_GET['tgl_awal'] ?? $today;
+$tglAkhir = $_GET['tgl_akhir'] ?? $today;
 $tipe     = $_GET['tipe'] ?? 'semua';
 $kategori = trim($_GET['kategori'] ?? '');
 $search   = trim($_GET['q'] ?? '');
 
-// Ambil Daftar Kategori Unik dari Database (Untuk Dropdown Filter)
+// Ambil Daftar Kategori Unik dari Database
 $stmtKat = $pdo->query("SELECT DISTINCT kategori FROM transaksi WHERE kategori != '' ORDER BY kategori ASC");
 $listKategori = $stmtKat->fetchAll(PDO::FETCH_COLUMN);
 
-// Jika HTMX Request, Hanya Rendernya bagian Area Laporan saja
+// Jika HTMX Request, Hanya Render bagian Area Laporan
 if ($isHtmx) {
     renderMainLaporan($pdo, $tglAwal, $tglAkhir, $tipe, $kategori, $search);
     exit;
@@ -99,19 +103,25 @@ require_once BASE_PATH . 'partials/header.php';
     </form>
   </div>
 
-  <!-- AREA KONTEN LAPORAN (CARD SUMMARY & TABEL DATA) -->
+  <!-- AREA KONTEN LAPORAN -->
   <?php renderMainLaporan($pdo, $tglAwal, $tglAkhir, $tipe, $kategori, $search); ?>
 
 </main>
 
 <script>
-// Helper JavaScript untuk Preset Tanggal Cepat
+// Helper JavaScript lokal (Tanpa ISO String UTC)
 function setPresetDate(type) {
-  const today = new Date();
   const tglAwal = document.getElementById('tglAwal');
   const tglAkhir = document.getElementById('tglAkhir');
 
-  const formatDate = (date) => date.toISOString().split('T')[0];
+  const formatDate = (date) => {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  };
+
+  const today = new Date();
 
   if (type === 'today') {
     tglAwal.value = formatDate(today);
@@ -127,7 +137,6 @@ function setPresetDate(type) {
     tglAkhir.value = formatDate(today);
   }
 
-  // Trigger event change agar HTMX otomatis melakukan request
   tglAwal.dispatchEvent(new Event('change', { bubbles: true }));
 }
 </script>
@@ -136,16 +145,16 @@ function setPresetDate(type) {
 
 <?php
 /**
- * FUNGSI UTAMA UNTUK MENG-GENERATE SUMMARY CARD & TABEL DATA LAPORAN
+ * FUNGSI UTAMA UNTUK SUMMARY & TABEL LAPORAN
  */
 function renderMainLaporan($pdo, $tglAwal, $tglAkhir, $tipe, $kategori, $search) {
-    // 1. Ambil Sisa Saldo Kas Terakhir Keseluruhan Saat Ini
+    // 1. Ambil Saldo Kas Terakhir
     $stmtCurrentSaldo = $pdo->query("SELECT saldo_akhir FROM transaksi ORDER BY id DESC LIMIT 1");
     $currentSaldoRow  = $stmtCurrentSaldo->fetch(PDO::FETCH_ASSOC);
     $saldoTerakhir    = $currentSaldoRow ? floatval($currentSaldoRow['saldo_akhir']) : 0;
 
-    // 2. Query Summary Sesuai Filter Tanggal & Kategori
-    $sqlSummaryWhere = ["tanggal BETWEEN ? AND ?"];
+    // 2. Query Summary dengan SUBSTR/DATE untuk menangani format 'YYYY-MM-DD' maupun 'YYYY-MM-DD HH:MM:SS'
+    $sqlSummaryWhere = ["SUBSTR(tanggal, 1, 10) BETWEEN ? AND ?"];
     $paramSummary    = [$tglAwal, $tglAkhir];
 
     if (!empty($kategori)) {
