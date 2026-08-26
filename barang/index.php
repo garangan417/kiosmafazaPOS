@@ -7,8 +7,9 @@ require_once __DIR__ . '/../config.php';
 require_once BASE_PATH . 'database/db_barang.php';
 require_once BASE_PATH . 'database/query_barang.php';
 
-// TANGKAP BARCODE DARI URL (Redirect dari Halaman Kasir)
+// TANGKAP PARAMETER URL (SEARCH & BARCODE REDIRECT)
 $barcodeFromUrl = isset($_GET['barcode']) ? trim($_GET['barcode']) : '';
+$searchQuery    = isset($_GET['q']) ? trim($_GET['q']) : '';
 
 // PROSES POST
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -101,7 +102,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $isi          = max(1, intval($_POST['isi'] ?? 1));
         $barcode      = trim($_POST['barcode'] ?? '');
 
-        // VALIDASI BARCODE GANDA
         if (!empty($barcode) && isBarcodeExists($pdoBarang, $barcode)) {
             $_SESSION['toast_error'] = "Gagal: Barcode '{$barcode}' sudah terdaftar pada produk/kemasan lain!";
         } elseif ($barang_id > 0 && !empty($nama_kemasan)) {
@@ -131,7 +131,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $kemasan_id = intval($_POST['kemasan_id'] ?? 0);
         $barcode    = trim($_POST['barcode'] ?? '');
 
-        // VALIDASI BARCODE GANDA
         if (empty($barcode)) {
             $_SESSION['toast_error'] = "Gagal: Barcode tidak boleh kosong!";
         } elseif (isBarcodeExists($pdoBarang, $barcode)) {
@@ -175,16 +174,57 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
-    // Redirect untuk menghindari re-submission form saat refresh
-    header("Location: " . $_SERVER['PHP_SELF'] . (!empty($barcodeFromUrl) ? '?barcode=' . urlencode($barcodeFromUrl) : ''));
+    // Redirect dengan mempertahankan parameter query URL
+    $queryParams = [];
+    if (!empty($barcodeFromUrl)) $queryParams['barcode'] = $barcodeFromUrl;
+    if (!empty($searchQuery)) $queryParams['q'] = $searchQuery;
+    if (isset($_GET['page'])) $queryParams['page'] = intval($_GET['page']);
+
+    $queryString = !empty($queryParams) ? '?' . http_build_query($queryParams) : '';
+    header("Location: " . $_SERVER['PHP_SELF'] . $queryString);
     exit;
 }
 
 // AMBIL DATA KATEGORI UNTUK DROPDOWN
 $listKategori = $pdoBarang->query("SELECT * FROM kategori ORDER BY nama_kategori ASC")->fetchAll();
 
-// AMBIL DAFTAR BARANG LENGKAP
-$daftarBarang = getDaftarBarangLengkap($pdoBarang);
+// AMBIL SEMUA DAFTAR BARANG
+$allBarang = getDaftarBarangLengkap($pdoBarang);
+
+// FITUR PENCARIAN (Berdasarkan Nama Barang, Kemasan, atau Barcode)
+if (!empty($searchQuery)) {
+    $searchLower = mb_strtolower($searchQuery);
+    $allBarang = array_filter($allBarang, function ($item) use ($searchLower) {
+        $namaBarang  = mb_strtolower($item['nama_barang'] ?? '');
+        $namaKemasan = mb_strtolower($item['nama_kemasan'] ?? '');
+        $listBarcode = mb_strtolower($item['list_barcode'] ?? '');
+
+        return str_contains($namaBarang, $searchLower)
+            || str_contains($namaKemasan, $searchLower)
+            || str_contains($listBarcode, $searchLower);
+    });
+
+    // Re-index array setelah difilter
+    $allBarang = array_values($allBarang);
+}
+
+// LOGIKA PAGINASI
+$totalItems   = count($allBarang);
+$limit        = 10; // Jumlah item per halaman
+$totalPages   = max(1, ceil($totalItems / $limit));
+$currentPage  = max(1, min($totalPages, intval($_GET['page'] ?? 1)));
+$offset       = ($currentPage - 1) * $limit;
+
+// Potong data array sesuai halaman saat ini
+$daftarBarang = array_slice($allBarang, $offset, $limit);
+
+// Helper Query String untuk Pagination Link
+$buildPageUrl = function ($page) use ($searchQuery, $barcodeFromUrl) {
+    $params = ['page' => $page];
+    if (!empty($searchQuery)) $params['q'] = $searchQuery;
+    if (!empty($barcodeFromUrl)) $params['barcode'] = $barcodeFromUrl;
+    return '?' . http_build_query($params);
+};
 
 require_once BASE_PATH . 'partials/header.php';
 ?>
@@ -261,9 +301,39 @@ require_once BASE_PATH . 'partials/header.php';
     <!-- TABEL DAFTAR BARANG -->
     <div class="col-lg-8">
       <div class="card shadow-sm border-0">
-        <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
-          <h5 class="card-title mb-0 fw-bold text-dark">Daftar Barang & Kemasan</h5>
-          <span class="badge bg-secondary"><?= count($daftarBarang); ?> Varian Item</span>
+        <div class="card-header bg-white py-3">
+          <div class="row g-2 align-items-center">
+            <div class="col-md-5 d-flex align-items-center gap-2">
+              <h5 class="card-title mb-0 fw-bold text-dark">Daftar Barang & Kemasan</h5>
+              <span class="badge bg-secondary"><?= $totalItems; ?> Varian Item</span>
+            </div>
+
+            <!-- FORM PENCARIAN -->
+            <div class="col-md-7">
+              <form action="" method="GET" class="d-flex gap-2">
+                <?php if (!empty($barcodeFromUrl)): ?>
+                  <input type="hidden" name="barcode" value="<?= htmlspecialchars($barcodeFromUrl); ?>">
+                <?php endif; ?>
+                
+                <div class="input-group input-group-sm">
+                  <span class="input-group-text bg-light border-end-0"><i class="bi bi-search text-muted"></i></span>
+                  <input type="text" 
+                         name="q" 
+                         class="form-control border-start-0 ps-0" 
+                         placeholder="Cari nama barang atau barcode..." 
+                         value="<?= htmlspecialchars($searchQuery); ?>">
+                  <?php if (!empty($searchQuery)): ?>
+                    <a href="<?= $_SERVER['PHP_SELF'] . (!empty($barcodeFromUrl) ? '?barcode=' . urlencode($barcodeFromUrl) : ''); ?>" 
+                       class="btn btn-outline-secondary" 
+                       title="Reset Pencarian">
+                      <i class="bi bi-x-lg"></i>
+                    </a>
+                  <?php endif; ?>
+                  <button type="submit" class="btn btn-dark">Cari</button>
+                </div>
+              </form>
+            </div>
+          </div>
         </div>
 
         <div class="table-responsive">
@@ -280,7 +350,14 @@ require_once BASE_PATH . 'partials/header.php';
             <tbody>
               <?php if (empty($daftarBarang)): ?>
                 <tr>
-                  <td colspan="5" class="text-center text-muted py-4">Belum ada data barang.</td>
+                  <td colspan="5" class="text-center text-muted py-4">
+                    <?php if (!empty($searchQuery)): ?>
+                      <i class="bi bi-search d-block fs-3 mb-2 text-secondary"></i>
+                      Tidak ditemukan barang dengan kata kunci "<strong><?= htmlspecialchars($searchQuery); ?></strong>".
+                    <?php else: ?>
+                      Belum ada data barang.
+                    <?php endif; ?>
+                  </td>
                 </tr>
               <?php else: ?>
                 <?php foreach ($daftarBarang as $row): ?>
@@ -553,6 +630,42 @@ require_once BASE_PATH . 'partials/header.php';
             </tbody>
           </table>
         </div>
+
+        <!-- NAVIGASI PAGINATION -->
+        <?php if ($totalPages > 1): ?>
+          <div class="card-footer bg-white py-3 d-flex justify-content-between align-items-center">
+            <span class="small text-muted">
+              Menampilkan <strong><?= $totalItems > 0 ? $offset + 1 : 0; ?></strong> - <strong><?= min($offset + $limit, $totalItems); ?></strong> dari <strong><?= $totalItems; ?></strong> item
+            </span>
+            <nav aria-label="Page navigation">
+              <ul class="pagination pagination-sm mb-0">
+                <!-- Tombol Previous -->
+                <li class="page-item <?= ($currentPage <= 1) ? 'disabled' : ''; ?>">
+                  <a class="page-link" href="<?= $buildPageUrl($currentPage - 1); ?>">
+                    &laquo; Prev
+                  </a>
+                </li>
+
+                <!-- Angka Halaman -->
+                <?php for ($i = 1; $i <= $totalPages; $i++): ?>
+                  <li class="page-item <?= ($i === $currentPage) ? 'active' : ''; ?>">
+                    <a class="page-link" href="<?= $buildPageUrl($i); ?>">
+                      <?= $i; ?>
+                    </a>
+                  </li>
+                <?php endfor; ?>
+
+                <!-- Tombol Next -->
+                <li class="page-item <?= ($currentPage >= $totalPages) ? 'disabled' : ''; ?>">
+                  <a class="page-link" href="<?= $buildPageUrl($currentPage + 1); ?>">
+                    Next &raquo;
+                  </a>
+                </li>
+              </ul>
+            </nav>
+          </div>
+        <?php endif; ?>
+
       </div>
     </div>
 
