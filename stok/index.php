@@ -20,7 +20,6 @@ $sql = "SELECT
         ORDER BY b.nama_barang ASC";
 $listBarang = $pdoBarang->query($sql)->fetchAll();
 
-// Memuat Partial Header Utama
 require_once BASE_PATH . 'partials/header.php';
 ?>
 
@@ -28,14 +27,13 @@ require_once BASE_PATH . 'partials/header.php';
     <div class="d-flex justify-content-between align-items-center mb-3">
         <h4 class="m-0 fw-bold"><i class="bi bi-box-seam me-2"></i> Manajemen & Restok Barang</h4>
         <div class="d-flex gap-2">
-            <!-- Link menuju Halaman Pengaturan Stok On/Off -->
             <a href="../kasir/pengaturan_stok.php" class="btn btn-outline-primary btn-sm">
                 <i class="bi bi-gear me-1"></i> Pengaturan Stok
             </a>
-            <!-- Tombol Refresh Tabel via HTMX -->
             <button class="btn btn-outline-secondary btn-sm" 
                     hx-get="api_stok.php?action=load_tabel" 
                     hx-target="#tblStokBody" 
+                    hx-include="#inputCariStok"
                     hx-swap="innerHTML">
                 <i class="bi bi-arrow-clockwise me-1"></i> Refresh Tabel
             </button>
@@ -53,6 +51,7 @@ require_once BASE_PATH . 'partials/header.php';
                     <form id="formRestok"
                           hx-post="api_stok.php?action=tambah_stok" 
                           hx-target="#tblStokBody" 
+                          hx-include="#inputCariStok"
                           hx-swap="innerHTML">
 
                         <div class="mb-3">
@@ -84,7 +83,6 @@ require_once BASE_PATH . 'partials/header.php';
                             </div>
                         </div>
 
-                        <!-- Live Preview Konversi Stok -->
                         <div id="boxPreview" class="alert alert-info py-2 px-3 small d-none">
                             <i class="bi bi-info-circle me-1"></i> Konversi: <span id="txtPreviewKonversi">0 Pcs</span>
                         </div>
@@ -105,6 +103,22 @@ require_once BASE_PATH . 'partials/header.php';
         <!-- Tabel Live Data Stok Barang -->
         <div class="col-md-8">
             <div class="card shadow-sm border-0">
+                <div class="card-header bg-white py-2">
+                    <!-- Form Input Pencarian Realtime HTMX -->
+                    <div class="input-group input-group-sm">
+                        <span class="input-group-text bg-light"><i class="bi bi-search"></i></span>
+                        <input type="search" 
+                               id="inputCariStok"
+                               name="q" 
+                               class="form-control" 
+                               placeholder="Cari nama barang atau scan barcode..."
+                               hx-get="api_stok.php?action=load_tabel" 
+                               hx-trigger="keyup changed delay:300ms, search" 
+                               hx-target="#tblStokBody"
+                               hx-swap="innerHTML"
+                               autofocus>
+                    </div>
+                </div>
                 <div class="card-body p-0">
                     <div class="table-responsive">
                         <table class="table table-hover align-middle mb-0">
@@ -119,6 +133,7 @@ require_once BASE_PATH . 'partials/header.php';
                             <tbody id="tblStokBody" 
                                    hx-get="api_stok.php?action=load_tabel" 
                                    hx-trigger="load, reloadStok from:body" 
+                                   hx-include="#inputCariStok"
                                    hx-swap="innerHTML">
                             </tbody>
                         </table>
@@ -131,7 +146,6 @@ require_once BASE_PATH . 'partials/header.php';
 
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script>
-// Mixin SweetAlert2 Toast
 const Toast = Swal.mixin({
     toast: true,
     position: 'top-end',
@@ -144,15 +158,12 @@ function fireToast(icon, title) {
     Toast.fire({ icon: icon, title: title });
 }
 
-// Intersept Header HX-Trigger untuk Toast SweetAlert2
 document.body.addEventListener('htmx:afterRequest', function(evt) {
-    // Reset Form jika request restok berhasil
     if (evt.detail.elt.id === 'formRestok' && evt.detail.successful) {
         document.getElementById('formRestok').reset();
         document.getElementById('boxPreview').classList.add('d-none');
     }
 
-    // Tangkap Header HX-Trigger dari Response Server
     const triggerHeader = evt.detail.xhr.getResponseHeader('HX-Trigger');
     if (triggerHeader) {
         try {
@@ -210,8 +221,8 @@ function hitungPreviewStok() {
     }
 }
 
-// Opname Menggunakan SweetAlert2 Input Modal (Pengganti prompt)
 function setOpname(id, nama, stokSistemPcs, satuan) {
+    const searchVal = document.getElementById('inputCariStok').value;
     Swal.fire({
         title: 'Stock Opname',
         html: `<strong>${nama}</strong><br><small class="text-muted">Stok sistem saat ini: ${stokSistemPcs} ${satuan}</small>`,
@@ -232,7 +243,11 @@ function setOpname(id, nama, stokSistemPcs, satuan) {
             htmx.ajax('POST', 'api_stok.php?action=opname', {
                 target: '#tblStokBody',
                 swap: 'innerHTML',
-                values: { kemasan_id: id, stok_fisik: parseInt(result.value) }
+                values: { 
+                    kemasan_id: id, 
+                    stok_fisik: parseInt(result.value),
+                    q: searchVal
+                }
             });
         }
     });

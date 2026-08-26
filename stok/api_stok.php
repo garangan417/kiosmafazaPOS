@@ -8,7 +8,7 @@ require_once __DIR__ . '/../config.php';
 require_once BASE_PATH . 'database/db_barang.php';
 
 // ==========================================
-// 1. DEKLARASI FUNGSI HELPER (HARUS DI ATAS)
+// 1. DEKLARASI FUNGSI HELPER
 // ==========================================
 
 // Helper: Send HTMX Toast Header
@@ -18,9 +18,11 @@ function sendHtmxToast($icon, $title) {
     ]));
 }
 
-// Helper: Render Isi Tabel Stok
-function renderTabelStok($pdo) {
-    $sql = "SELECT 
+// Helper: Render Isi Tabel Stok dengan Filter Pencarian Nama & Barcode
+function renderTabelStok($pdo, $searchQuery = '') {
+    $searchQuery = trim($searchQuery);
+    
+    $sql = "SELECT DISTINCT
                 bk.id AS kemasan_id,
                 b.nama_barang,
                 bk.nama_kemasan,
@@ -29,13 +31,23 @@ function renderTabelStok($pdo) {
                 COALESCE(bk.stok, 0) AS stok
             FROM barang_kemasan bk
             JOIN barang b ON bk.barang_id = b.id
-            ORDER BY b.nama_barang ASC";
+            LEFT JOIN barang_barcode bb ON bk.id = bb.barang_kemasan_id";
     
-    $stmt = $pdo->query($sql);
-    $list = $stmt ? $stmt->fetchAll(PDO::FETCH_ASSOC) : [];
+    $params = [];
+    if ($searchQuery !== '') {
+        $sql .= " WHERE b.nama_barang LIKE ? OR bk.nama_kemasan LIKE ? OR bb.barcode LIKE ?";
+        $searchTerm = '%' . $searchQuery . '%';
+        $params = [$searchTerm, $searchTerm, $searchTerm];
+    }
+    
+    $sql .= " ORDER BY b.nama_barang ASC";
+    
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
+    $list = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     if (empty($list)) {
-        echo '<tr><td colspan="4" class="text-center text-muted py-3">Belum ada data barang.</td></tr>';
+        echo '<tr><td colspan="4" class="text-center text-muted py-4"><i class="bi bi-inbox d-block fs-3 mb-1"></i>Data barang tidak ditemukan.</td></tr>';
         return;
     }
 
@@ -68,10 +80,11 @@ function renderTabelStok($pdo) {
 // 2. LOGIKA ROUTING EKSEKUSI
 // ==========================================
 
-$action = $_GET['action'] ?? '';
+$action      = $_GET['action'] ?? '';
+$searchQuery = $_GET['q'] ?? $_POST['q'] ?? '';
 
 if ($action === 'load_tabel') {
-    renderTabelStok($pdoBarang);
+    renderTabelStok($pdoBarang, $searchQuery);
     exit;
 }
 
@@ -83,26 +96,24 @@ if ($action === 'tambah_stok') {
 
     if ($kemasanId <= 0 || $qty <= 0) {
         sendHtmxToast('error', 'Pilih barang dan jumlah stok dengan benar!');
-        renderTabelStok($pdoBarang);
+        renderTabelStok($pdoBarang, $searchQuery);
         exit;
     }
 
     try {
-        // Ambil data kemasan & isi per kemasan
         $stmt = $pdoBarang->prepare("SELECT isi, stok FROM barang_kemasan WHERE id = ?");
         $stmt->execute([$kemasanId]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
         if (!$row) {
             sendHtmxToast('error', 'Data barang tidak ditemukan!');
-            renderTabelStok($pdoBarang);
+            renderTabelStok($pdoBarang, $searchQuery);
             exit;
         }
 
         $isi = max(1, intval($row['isi']));
         $tambahanStokPcs = ($opsiSatuan === 'GROSIR') ? ($qty * $isi) : $qty;
 
-        // Update Stok
         $pdoBarang->beginTransaction();
         $updateStmt = $pdoBarang->prepare("UPDATE barang_kemasan SET stok = stok + ? WHERE id = ?");
         $updateStmt->execute([$tambahanStokPcs, $kemasanId]);
@@ -116,7 +127,7 @@ if ($action === 'tambah_stok') {
         sendHtmxToast('error', 'Error Database: ' . $e->getMessage());
     }
 
-    renderTabelStok($pdoBarang);
+    renderTabelStok($pdoBarang, $searchQuery);
     exit;
 }
 
@@ -137,6 +148,6 @@ if ($action === 'opname') {
         sendHtmxToast('error', 'Data Opname tidak valid!');
     }
 
-    renderTabelStok($pdoBarang);
+    renderTabelStok($pdoBarang, $searchQuery);
     exit;
 }

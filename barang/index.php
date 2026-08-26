@@ -210,7 +210,7 @@ if (!empty($searchQuery)) {
 
 // LOGIKA PAGINASI
 $totalItems   = count($allBarang);
-$limit        = 10; // Jumlah item per halaman
+$limit        = 50; // Jumlah item per halaman
 $totalPages   = max(1, ceil($totalItems / $limit));
 $currentPage  = max(1, min($totalPages, intval($_GET['page'] ?? 1)));
 $offset       = ($currentPage - 1) * $limit;

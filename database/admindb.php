@@ -2,8 +2,53 @@
 // 1. Auto-Scan File SQLite di Folder Saat Ini
 $targetFolder = __DIR__;
 $extensions = ['db', 'sqlite', 'sqlite3', 'db3'];
-$foundDatabases = [];
 
+// PROSES DOWNLOAD DATABASE
+if (isset($_GET['action']) && $_GET['action'] === 'download_db') {
+    $downloadDb = basename($_GET['db'] ?? '');
+    $downloadFile = $targetFolder . '/' . $downloadDb;
+
+    if ($downloadDb && file_exists($downloadFile)) {
+        header('Content-Description: File Transfer');
+        header('Content-Type: application/x-sqlite3');
+        header('Content-Disposition: attachment; filename="' . basename($downloadFile) . '"');
+        header('Expires: 0');
+        header('Cache-Control: must-revalidate');
+        header('Pragma: public');
+        header('Content-Length: ' . filesize($downloadFile));
+        readfile($downloadFile);
+        exit;
+    }
+}
+
+// PROSES UPLOAD DATABASE
+$msg = '';
+$msgType = 'msg';
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['upload_db'])) {
+    if (isset($_FILES['db_file']) && $_FILES['db_file']['error'] === UPLOAD_ERR_OK) {
+        $fileName = basename($_FILES['db_file']['name']);
+        $ext = strtolower(pathinfo($fileName, PATHINFO_EXTENSION));
+
+        if (in_array($ext, $extensions)) {
+            $destPath = $targetFolder . '/' . $fileName;
+            if (move_uploaded_file($_FILES['db_file']['tmp_name'], $destPath)) {
+                header("Location: ?db=" . urlencode($fileName));
+                exit;
+            } else {
+                $msg = "Gagal memindahkan file yang diupload.";
+                $msgType = 'alert';
+            }
+        } else {
+            $msg = "Ekstensi file tidak valid! Gunakan format (.db, .sqlite, .sqlite3, .db3).";
+            $msgType = 'alert';
+        }
+    } else {
+        $msg = "Gagal mengupload file database.";
+        $msgType = 'alert';
+    }
+}
+
+$foundDatabases = [];
 foreach ($extensions as $ext) {
     $files = glob($targetFolder . "/*." . $ext);
     if ($files !== false) {
@@ -59,8 +104,6 @@ $activeDb = $_GET['db'] ?? ($foundDatabases[0] ?? null);
 $dbFile = $activeDb ? $targetFolder . '/' . $activeDb : null;
 
 $pdo = null;
-$msg = '';
-$msgType = 'msg';
 $tables = [];
 
 // 3. Inisialisasi Database Utama & Process Form Submit
@@ -104,7 +147,7 @@ if ($dbFile && file_exists($dbFile)) {
             }
         }
 
-        // PROSES COPY DATA ANTA DB (SAFE TRANSACTION WITHOUT ATTACH DATABASE)
+        // PROSES COPY DATA ANTA DB
         if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['copy_data'])) {
             $sourceDb     = $_POST['source_db'] ?? '';
             $sourceTable  = $_POST['source_table'] ?? '';
@@ -117,7 +160,6 @@ if ($dbFile && file_exists($dbFile)) {
             $sourceDbPath = $targetFolder . '/' . $sourceDb;
 
             if ($sourceDb && $sourceTable && $targetTable && file_exists($sourceDbPath)) {
-                // 1. Ambil MAX ID awal dari tabel tujuan
                 $maxId = 0;
                 try {
                     $maxIdStmt = $pdo->query("SELECT MAX(CAST(id AS INTEGER)) FROM \"$targetTable\"");
@@ -126,14 +168,13 @@ if ($dbFile && file_exists($dbFile)) {
                     $maxId = 0;
                 }
 
-                // 2. Baca data dari Database Asal menggunakan koneksi terpisah (bebas locking)
                 $srcPdo = new PDO('sqlite:' . realpath($sourceDbPath));
                 $srcPdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
                 $srcPdo->setAttribute(PDO::ATTR_TIMEOUT, 5);
 
                 $srcStmt = $srcPdo->query("SELECT * FROM \"$sourceTable\"");
                 $sourceRows = $srcStmt->fetchAll(PDO::FETCH_ASSOC);
-                $srcPdo = null; // Tutup koneksi db asal secepat mungkin
+                $srcPdo = null;
 
                 if (!empty($sourceRows)) {
                     $targetFields = [];
@@ -155,7 +196,6 @@ if ($dbFile && file_exists($dbFile)) {
                         $placeholders = implode(', ', array_fill(0, count($targetFields), '?'));
                         $sqlInsert = "$insertKeyword INTO \"$targetTable\" ($fieldList) VALUES ($placeholders)";
 
-                        // 3. Masukkan data dengan Transaction ke DB Target
                         $pdo->beginTransaction();
                         $insertStmt = $pdo->prepare($sqlInsert);
                         $insertedCount = 0;
@@ -242,9 +282,9 @@ $table  = $_GET['table'] ?? '';
     <title>SQLite Admin & Column Manager</title>
     <style>
         body { font-family: monospace, sans-serif; margin: 0; display: flex; height: 100vh; }
-        #sidebar { width: 260px; background: #1e293b; color: #f8fafc; padding: 15px; box-sizing: border-box; }
-        #sidebar select { width: 100%; padding: 6px; margin: 8px 0 15px 0; background: #334155; color: #fff; border: 1px solid #475569; border-radius: 4px; }
-        #sidebar a { color: #cbd5e1; text-decoration: none; display: block; margin: 6px 0; padding: 4px 6px; border-radius: 3px; }
+        #sidebar { width: 280px; background: #1e293b; color: #f8fafc; padding: 15px; box-sizing: border-box; display: flex; flex-direction: column; }
+        #sidebar select, #sidebar input[type="file"] { width: 100%; padding: 6px; margin: 6px 0 12px 0; background: #334155; color: #fff; border: 1px solid #475569; border-radius: 4px; box-sizing: border-box; font-size: 11px; }
+        #sidebar a { color: #cbd5e1; text-decoration: none; display: block; margin: 4px 0; padding: 6px; border-radius: 4px; font-size: 13px; }
         #sidebar a:hover { background: #334155; color: #fff; }
         #sidebar a.active { background: #0284c7; color: #fff; }
         #content { flex: 1; padding: 20px; overflow-y: auto; background: #f8fafc; }
@@ -253,10 +293,11 @@ $table  = $_GET['table'] ?? '';
         th { background: #f1f5f9; }
         .msg { padding: 10px; background: #e0f2fe; color: #0369a1; margin-bottom: 15px; border-radius: 4px; }
         .alert { padding: 10px; background: #fee2e2; color: #991b1b; margin-bottom: 15px; border-radius: 4px; }
-        .btn { padding: 5px 10px; border-radius: 3px; cursor: pointer; text-decoration: none; font-size: 12px; }
+        .btn { padding: 5px 10px; border-radius: 3px; cursor: pointer; text-decoration: none; font-size: 12px; display: inline-block; text-align: center; }
         .btn-danger { background: #ef4444; color: white; border: none; }
         .btn-primary { background: #0284c7; color: white; border: none; padding: 8px 15px; border-radius: 4px; }
         .btn-success { background: #16a34a; color: white; border: none; }
+        .btn-download { background: #059669; color: white; width: 100%; box-sizing: border-box; margin-bottom: 15px; font-weight: bold; padding: 6px; }
         .form-card { background: #fff; padding: 20px; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); max-width: 850px; }
         .form-group { margin-bottom: 15px; }
         .form-group label { display: block; margin-bottom: 5px; font-weight: bold; }
@@ -268,6 +309,7 @@ $table  = $_GET['table'] ?? '';
         .nav-tabs { display: flex; gap: 8px; margin-bottom: 15px; }
         .nav-tabs a { padding: 8px 16px; background: #e2e8f0; text-decoration: none; color: #334155; border-radius: 4px; font-weight: bold; }
         .nav-tabs a.active { background: #0284c7; color: #fff; }
+        .upload-box { background: #0f172a; padding: 10px; border-radius: 6px; margin-bottom: 15px; border: 1px dashed #475569; }
     </style>
 </head>
 <body>
@@ -284,19 +326,36 @@ $table  = $_GET['table'] ?? '';
         <?php endforeach; ?>
     </select>
 
-    <?php if ($pdo): ?>
-        <strong>Daftar Tabel (<?= count($tables) ?>):</strong>
-        <div style="margin-top: 8px;">
-            <?php foreach ($tables as $t): ?>
-                <a href="?db=<?= urlencode($activeDb) ?>&action=browse&table=<?= urlencode($t) ?>" 
-                   class="<?= $table === $t ? 'active' : '' ?>">
-                    📊 <?= htmlspecialchars($t) ?>
-                </a>
-            <?php endforeach; ?>
-        </div>
-        <hr style="border-color: #334155; margin: 15px 0;">
-        <a href="?db=<?= urlencode($activeDb) ?>&action=copy" class="<?= $action === 'copy' ? 'active' : '' ?>">🔄 Copy Data Antar DB</a>
+    <?php if ($activeDb): ?>
+        <a href="?action=download_db&db=<?= urlencode($activeDb) ?>" class="btn btn-download">
+            ⬇️ Download <?= htmlspecialchars($activeDb) ?>
+        </a>
     <?php endif; ?>
+
+    <div class="upload-box">
+        <form method="POST" enctype="multipart/form-data">
+            <input type="hidden" name="upload_db" value="1">
+            <label style="font-size: 11px; font-weight: bold;">📤 Upload DB Baru:</label>
+            <input type="file" name="db_file" accept=".db,.sqlite,.sqlite3,.db3" required>
+            <button type="submit" class="btn btn-primary" style="width: 100%; font-size: 11px; padding: 5px;">Upload File</button>
+        </form>
+    </div>
+
+    <div style="flex:1; overflow-y:auto;">
+        <?php if ($pdo): ?>
+            <strong>Daftar Tabel (<?= count($tables) ?>):</strong>
+            <div style="margin-top: 8px;">
+                <?php foreach ($tables as $t): ?>
+                    <a href="?db=<?= urlencode($activeDb) ?>&action=browse&table=<?= urlencode($t) ?>" 
+                       class="<?= $table === $t ? 'active' : '' ?>">
+                        📊 <?= htmlspecialchars($t) ?>
+                    </a>
+                <?php endforeach; ?>
+            </div>
+            <hr style="border-color: #334155; margin: 15px 0;">
+            <a href="?db=<?= urlencode($activeDb) ?>&action=copy" class="<?= $action === 'copy' ? 'active' : '' ?>">🔄 Copy Data Antar DB</a>
+        <?php endif; ?>
+    </div>
 </div>
 
 <div id="content">
