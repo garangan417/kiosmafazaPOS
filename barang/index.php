@@ -671,8 +671,8 @@ require_once BASE_PATH . 'partials/header.php';
 
   </div>
 </main>
+<script src="/assets/js/sweetalert2.all.min.min.js"></script>
 
-<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script>
   const Toast = Swal.mixin({
     toast: true,

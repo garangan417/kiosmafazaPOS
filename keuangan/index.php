@@ -174,7 +174,7 @@ require_once BASE_PATH . 'partials/header.php';
 
 </main>
 
-<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script src="/assets/js/sweetalert2.all.min.min.js"></script>
 <script>
   // Konfigurasi SweetAlert2 Toast
   const Toast = Swal.mixin({
