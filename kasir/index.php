@@ -11,7 +11,7 @@ require_once BASE_PATH . 'partials/header.php';
 ?>
 
 <!-- HTML5-QRCode JS Library via CDN -->
-<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script src="/assets/js/html5-qrcode.min.js"></script>
 
 <div class="container-fluid my-3 px-4">
   <div class="row g-3">
