@@ -11,7 +11,7 @@ require_once BASE_PATH . 'partials/header.php';
 ?>
 
 <!-- HTML5-QRCode JS Library via CDN -->
-<script src="/assets/js/html5-qrcode.min.js"></script>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 
 <div class="container-fluid my-3 px-4">
   <div class="row g-3">
@@ -111,7 +111,8 @@ require_once BASE_PATH . 'partials/header.php';
 
           <div class="mb-3">
             <label class="form-label fw-bold small">Uang Diterima (Rp)</label>
-            <input type="number" id="inputBayar" class="form-control form-control-lg font-monospace fw-bold" placeholder="0" oninput="hitungKembalian()">
+            <!-- Diubah menjadi type="text" dan dipasang pemisah ribuan live -->
+            <input type="text" id="inputBayar" class="form-control form-control-lg font-monospace fw-bold" placeholder="0" oninput="formatInputRupiahJS(this); hitungKembalian()">
             <div class="d-flex gap-2 mt-2">
               <button class="btn btn-sm btn-outline-secondary flex-fill" onclick="setNominalBayar('PAS')">Uang Pas</button>
               <button class="btn btn-sm btn-outline-secondary flex-fill" onclick="setNominalBayar(50000)">50rb</button>
@@ -163,7 +164,8 @@ require_once BASE_PATH . 'partials/header.php';
           </div>
           <div class="mb-3">
             <label class="form-label small fw-bold">Nominal / Total Biaya (Rp)</label>
-            <input type="number" id="jasaNominal" class="form-control font-monospace fw-bold" placeholder="0" min="1" required>
+            <!-- Diubah menjadi type="text" dan dipasang pemisah ribuan live -->
+            <input type="text" id="jasaNominal" class="form-control font-monospace fw-bold" placeholder="0" oninput="formatInputRupiahJS(this)" required>
           </div>
           <button type="submit" class="btn btn-success w-100 fw-bold">
             <i class="bi bi-cart-plus me-1"></i> Tambahkan ke Keranjang
@@ -390,6 +392,16 @@ document.addEventListener("DOMContentLoaded", function() {
   });
 });
 
+// Helper JavaScript untuk format ribuan live saat mengetik di input text
+function formatInputRupiahJS(input) {
+  let value = input.value.replace(/\D/g, ''); // Hapus semua karakter non-angka
+  if (value) {
+    input.value = parseInt(value, 10).toLocaleString('id-ID');
+  } else {
+    input.value = '';
+  }
+}
+
 // ==========================================
 // TRANSAKSI JASA / PPOB
 // ==========================================
@@ -402,7 +414,10 @@ function openModalJasa() {
 function tambahJasaKeKeranjang() {
   let kategori = document.getElementById('jasaKategori').value;
   let keterangan = document.getElementById('jasaKeterangan').value.trim();
-  let nominal = parseFloat(document.getElementById('jasaNominal').value) || 0;
+  
+  // Clean karakter titik pemisah ribuan sebelum parsing nominal
+  let rawNominal = document.getElementById('jasaNominal').value.replace(/\./g, '');
+  let nominal = parseFloat(rawNominal) || 0;
 
   if (nominal <= 0) {
     alert('Nominal transaksi harus lebih dari 0!');
@@ -621,18 +636,26 @@ function resetFocusScan() {
 }
 
 function setNominalBayar(val) {
+  let inputBayar = document.getElementById('inputBayar');
   let total = cart.reduce((sum, item) => sum + item.subtotal, 0);
+  
   if (val === 'PAS') {
-    document.getElementById('inputBayar').value = total;
+    inputBayar.value = total;
   } else {
-    document.getElementById('inputBayar').value = val;
+    inputBayar.value = val;
   }
+  
+  // Format ulang angka ke pemisah ribuan
+  formatInputRupiahJS(inputBayar);
   hitungKembalian();
 }
 
 function hitungKembalian() {
   let total = cart.reduce((sum, item) => sum + item.subtotal, 0);
-  let bayar = parseFloat(document.getElementById('inputBayar').value) || 0;
+  
+  // Clean karakter titik pemisah ribuan sebelum parsing uang bayar
+  let rawBayar = document.getElementById('inputBayar').value.replace(/\./g, '');
+  let bayar = parseFloat(rawBayar) || 0;
   let kembalian = bayar - total;
   
   let elem = document.getElementById('displayKembalian');
@@ -783,7 +806,10 @@ function prosesCheckout() {
   }
 
   let total = cart.reduce((sum, item) => sum + item.subtotal, 0);
-  let bayar = parseFloat(document.getElementById('inputBayar').value) || 0;
+  
+  // Clean karakter titik pemisah ribuan sebelum dikirim ke server/checkout
+  let rawBayar = document.getElementById('inputBayar').value.replace(/\./g, '');
+  let bayar = parseFloat(rawBayar) || 0;
   let metode = document.getElementById('metodeBayar').value;
 
   if (metode === 'TUNAI' && bayar < total) {
