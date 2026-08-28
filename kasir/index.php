@@ -11,7 +11,7 @@ require_once BASE_PATH . 'partials/header.php';
 ?>
 
 <!-- HTML5-QRCode JS Library via CDN -->
-<script src="/assets/js/html5-qrcode.min.js"></script>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 
 <div class="container-fluid my-3 px-4">
   <div class="row g-3">
@@ -102,10 +102,18 @@ require_once BASE_PATH . 'partials/header.php';
         <div class="card-body p-3">
           <div class="mb-3">
             <label class="form-label fw-bold small">Metode Pembayaran</label>
-            <select id="metodeBayar" class="form-select">
+            <select id="metodeBayar" class="form-select" onchange="toggleFormUtang()">
               <option value="TUNAI" selected>TUNAI</option>
               <option value="TRANSFER">TRANSFER / QRIS</option>
               <option value="UTANG">UTANG / BON</option>
+            </select>
+          </div>
+
+          <!-- INPUT KHUSUS PELANGGAN (Hanya tampil jika Metode = UTANG) -->
+          <div class="mb-3 p-2 border border-warning rounded bg-warning-subtle" id="boxPelangganUtang" style="display: none;">
+            <label class="form-label fw-bold small text-dark"><i class="bi bi-person-fill me-1"></i> Pilih Pelanggan (Utang/Bon)</label>
+            <select id="selectPelanggan" class="form-select form-select-sm">
+              <option value="">-- Pilih Pelanggan --</option>
             </select>
           </div>
 
@@ -324,6 +332,7 @@ require_once BASE_PATH . 'partials/header.php';
             <div><strong>No:</strong> <span id="receiptNota">TRX-000</span></div>
             <div><strong>Tgl:</strong> <span id="receiptTanggal">00/00/0000 00:00</span></div>
             <div><strong>Bayar:</strong> <span id="receiptMetode">TUNAI</span></div>
+            <div id="receiptPelangganBox" style="display:none;"><strong>Pelanggan:</strong> <span id="receiptPelanggan">-</span></div>
           </div>
 
           <div class="border-top-dashed my-2"></div>
@@ -375,6 +384,7 @@ let cart = [];
 let scannedBarcode = '';
 let isFavoritChanged = false;
 let html5QrCode = null;
+let currentSearchResults = [];
 
 document.addEventListener("DOMContentLoaded", function() {
   const inputScan = document.getElementById('inputScan');
@@ -390,6 +400,9 @@ document.addEventListener("DOMContentLoaded", function() {
       document.getElementById('searchResult').style.display = 'none';
     }
   });
+
+  // Load awal daftar pelanggan
+  loadPelangganList();
 });
 
 // Helper JavaScript untuk format ribuan live saat mengetik di input text
@@ -400,6 +413,47 @@ function formatInputRupiahJS(input) {
   } else {
     input.value = '';
   }
+}
+
+function escapeHtml(text) {
+  if (!text) return '';
+  return text.toString()
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+// Handler Dropdown UTANG / BON & TRANSFER
+function toggleFormUtang() {
+  let metode = document.getElementById('metodeBayar').value;
+  let boxPelanggan = document.getElementById('boxPelangganUtang');
+  
+  if (metode === 'UTANG') {
+    boxPelanggan.style.display = 'block';
+  } else {
+    boxPelanggan.style.display = 'none';
+  }
+
+  // Jika TRANSFER/QRIS, otomatis set Uang Pas
+  if (metode === 'TRANSFER') {
+    setNominalBayar('PAS');
+  }
+}
+
+function loadPelangganList() {
+  fetch('api_search_pelanggan.php')
+    .then(res => res.json())
+    .then(res => {
+      let select = document.getElementById('selectPelanggan');
+      select.innerHTML = '<option value="">-- Pilih Pelanggan --</option>';
+      if (res.status === 'success' && res.data.length > 0) {
+        res.data.forEach(p => {
+          select.innerHTML += `<option value="${p.id}">${escapeHtml(p.nama)} ${p.no_hp ? '('+escapeHtml(p.no_hp)+')' : ''}</option>`;
+        });
+      }
+    });
 }
 
 // ==========================================
@@ -425,8 +479,9 @@ function tambahJasaKeKeranjang() {
   }
 
   let itemJasa = {
-    kemasan_id: 0,
-    nama_barang: keterangan,
+    tipe: 'JASA', // Marker tegas untuk PPOB / Jasa Mafaza
+    kemasan_id: null, // Jasa tidak punya kemasan_id
+    nama_barang: `[${kategori}] ${keterangan}`,
     nama_kemasan: kategori,
     satuan: 'trx',
     harga_beli: 0,
@@ -456,7 +511,9 @@ function openCameraScanner() {
   modalCam.show();
 
   setTimeout(() => {
-    html5QrCode = new Html5Qrcode("reader");
+    if (!html5QrCode) {
+      html5QrCode = new Html5Qrcode("reader");
+    }
     const config = { fps: 10, qrbox: { width: 250, height: 150 } };
 
     html5QrCode.start(
@@ -525,16 +582,17 @@ function liveSearchNama(q) {
 }
 
 function showSearchDropdown(data) {
+  currentSearchResults = data;
   let html = '';
-  data.forEach(item => {
+  data.forEach((item, index) => {
     html += `
       <a href="#" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center p-2" 
-         onclick='selectFromDropdown(${JSON.stringify(item)})'>
+         onclick="selectFromDropdown(${index}); return false;">
         <div>
-          <strong class="d-block text-dark">${item.nama_barang}</strong>
-          <small class="text-muted">${item.nama_kemasan} (${item.satuan})</small>
+          <strong class="d-block text-dark">${escapeHtml(item.nama_barang)}</strong>
+          <small class="text-muted">${escapeHtml(item.nama_kemasan)} (${escapeHtml(item.satuan || '')})</small>
         </div>
-        <span class="badge bg-success font-monospace fs-6">Rp ${Math.round(item.harga_ecer).toLocaleString('id-ID')}</span>
+        <span class="badge bg-success font-monospace fs-6">Rp ${Math.round(item.harga_ecer || item.harga_jual || 0).toLocaleString('id-ID')}</span>
       </a>`;
   });
   let sr = document.getElementById('searchResult');
@@ -542,9 +600,11 @@ function showSearchDropdown(data) {
   sr.style.display = 'block';
 }
 
-function selectFromDropdown(item) {
-  addToCart(item);
-  clearScan();
+function selectFromDropdown(index) {
+  if (currentSearchResults[index]) {
+    addToCart(currentSearchResults[index]);
+    clearScan();
+  }
 }
 
 function addToCart(item) {
@@ -556,16 +616,17 @@ function addToCart(item) {
     cart[existingIndex].subtotal = cart[existingIndex].qty * cart[existingIndex].harga_jual;
   } else {
     cart.push({
-      kemasan_id: item.kemasan_id || 0,
+      tipe: isJasa ? 'JASA' : 'BARANG',
+      kemasan_id: item.kemasan_id || null,
       nama_barang: item.nama_barang,
-      nama_kemasan: item.nama_kemasan,
+      nama_kemasan: item.nama_kemasan || '',
       satuan: item.satuan || 'pcs',
       harga_beli: item.harga_beli || 0,
-      harga_jual: item.harga_jual || item.harga_ecer,
+      harga_jual: item.harga_jual || item.harga_ecer || 0,
       qty: item.qty || 1,
-      subtotal: item.subtotal || item.harga_ecer,
+      subtotal: item.subtotal || item.harga_jual || item.harga_ecer || 0,
       is_jasa: isJasa,
-      kategori: item.kategori || 'PPOB / Jasa',
+      kategori: item.kategori || (isJasa ? 'PPOB / Jasa' : 'Barang Toko'),
       keterangan: item.keterangan || item.nama_barang
     });
   }
@@ -586,8 +647,8 @@ function renderCart() {
       tbody.innerHTML += `
         <tr>
           <td>
-            <strong class="d-block text-dark">${item.nama_barang}</strong>
-            <small class="text-muted">${item.nama_kemasan}</small>
+            <strong class="d-block text-dark">${escapeHtml(item.nama_barang)}</strong>
+            <small class="text-muted">${escapeHtml(item.nama_kemasan)}</small>
           </td>
           <td class="font-monospace">Rp ${Math.round(item.harga_jual).toLocaleString('id-ID')}</td>
           <td>
@@ -693,8 +754,8 @@ function loadFavoritList(q) {
 
           tbody.innerHTML += `
             <tr>
-              <td><strong class="text-dark">${item.nama_barang}</strong></td>
-              <td><span class="badge bg-light text-dark border">${item.nama_kemasan} (${item.satuan})</span></td>
+              <td><strong class="text-dark">${escapeHtml(item.nama_barang)}</strong></td>
+              <td><span class="badge bg-light text-dark border">${escapeHtml(item.nama_kemasan)} (${escapeHtml(item.satuan || '')})</span></td>
               <td class="text-center">
                 <button type="button" class="btn btn-sm ${btnClass} fw-bold" onclick="toggleFavorit(${item.kemasan_id}, ${newStatus})">
                   <i class="bi ${iconClass}"></i> ${isFav ? 'Favorit' : 'Biasa'}
@@ -763,7 +824,7 @@ function searchBarangTarget(q) {
       select.innerHTML = '';
       if (res.status === 'success' && res.data.length > 0) {
         res.data.forEach(item => {
-          select.innerHTML += `<option value="${item.kemasan_id}">${item.nama_barang} - ${item.nama_kemasan} (Rp ${Math.round(item.harga_ecer).toLocaleString('id-ID')})</option>`;
+          select.innerHTML += `<option value="${item.kemasan_id}">${escapeHtml(item.nama_barang)} - ${escapeHtml(item.nama_kemasan)} (Rp ${Math.round(item.harga_ecer).toLocaleString('id-ID')})</option>`;
         });
       } else {
         select.innerHTML = '<option disabled>Tidak ada barang ditemukan...</option>';
@@ -811,9 +872,17 @@ function prosesCheckout() {
   let rawBayar = document.getElementById('inputBayar').value.replace(/\./g, '');
   let bayar = parseFloat(rawBayar) || 0;
   let metode = document.getElementById('metodeBayar').value;
+  let pelangganId = document.getElementById('selectPelanggan').value;
 
+  // Validasi Metode TUNAI
   if (metode === 'TUNAI' && bayar < total) {
     alert('Uang pembayaran masih kurang!');
+    return;
+  }
+
+  // Validasi Metode UTANG
+  if (metode === 'UTANG' && !pelangganId) {
+    alert('Silakan pilih Pelanggan terlebih dahulu untuk transaksi UTANG / BON!');
     return;
   }
 
@@ -827,18 +896,31 @@ function prosesCheckout() {
   let yyyy = today.getFullYear();
   let mm = String(today.getMonth() + 1).padStart(2, '0');
   let dd = String(today.getDate()).padStart(2, '0');
+  let hh = String(today.getHours()).padStart(2, '0');
+  let ii = String(today.getMinutes()).padStart(2, '0');
+  let ss = String(today.getSeconds()).padStart(2, '0');
+  
   let tglForm = `${yyyy}-${mm}-${dd}`;
+  let datetimeFull = `${yyyy}-${mm}-${dd} ${hh}:${ii}:${ss}`;
+
+  // MEMISAHKAN ITEM BARANG FISIK DAN ITEM JASA/PPOB
+  let itemsBarang = cart.filter(item => !item.is_jasa);
+  let itemsJasa   = cart.filter(item => item.is_jasa);
 
   let payload = {
     tanggal: tglForm,
+    created_at: datetimeFull,
     total_kotor: total,
     diskon: 0,
     total_bersih: total,
     bayar: bayar,
     kembalian: kembalian > 0 ? kembalian : 0,
     metode_bayar: metode,
+    pelanggan_id: pelangganId || 0,
     catatan: '',
-    items: cart
+    items: cart,              // Tetap dikirim untuk kompatibilitas
+    items_barang: itemsBarang, // Barang fisik toko (untuk pemotongan stok & laporan fisik)
+    items_jasa: itemsJasa      // Layanan PPOB/Jasa (untuk laporan PPOB/Jasa)
   };
 
   fetch('api_checkout.php', {
@@ -861,11 +943,18 @@ function prosesCheckout() {
       document.getElementById('receiptTanggal').innerText = tglStr;
       document.getElementById('receiptMetode').innerText = metode;
 
+      if (metode === 'UTANG' && res.nama_pelanggan) {
+        document.getElementById('receiptPelangganBox').style.display = 'block';
+        document.getElementById('receiptPelanggan').innerText = res.nama_pelanggan;
+      } else {
+        document.getElementById('receiptPelangganBox').style.display = 'none';
+      }
+
       let itemsHtml = '';
       cart.forEach(item => {
         itemsHtml += `
           <tr>
-            <td colspan="2"><strong>${item.nama_barang}</strong> (${item.nama_kemasan})</td>
+            <td colspan="2"><strong>${escapeHtml(item.nama_barang)}</strong> (${escapeHtml(item.nama_kemasan)})</td>
           </tr>
           <tr>
             <td>${item.qty} x ${Math.round(item.harga_jual).toLocaleString('id-ID')}</td>
@@ -884,6 +973,8 @@ function prosesCheckout() {
       clearCart();
       document.getElementById('inputBayar').value = '';
       document.getElementById('displayKembalian').innerText = 'Rp 0';
+      document.getElementById('metodeBayar').value = 'TUNAI';
+      toggleFormUtang();
     } else {
       alert('Gagal menyimpan transaksi: ' + (res.message || 'Terjadi kesalahan pada server.'));
     }

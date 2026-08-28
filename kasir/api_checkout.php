@@ -1,127 +1,224 @@
 <?php
 // kasir/api_checkout.php
+require_once __DIR__ . '/../config.php';
+require_once BASE_PATH . 'database/db_barang.php';
+require_once BASE_PATH . 'database/db_pelanggan.php';
+require_once BASE_PATH . 'database/db.php'; // Dompet Keuangan (kios.sqlite)
+
 header('Content-Type: application/json');
 
-// Matikan error HTML agar respon JSON tidak rusak
-ini_set('display_errors', 0);
-error_reporting(E_ALL);
+$rawInput = file_get_contents('php://input');
+$data = json_decode($rawInput, true);
+
+if (!$data || empty($data['items'])) {
+    echo json_encode(['status' => false, 'message' => 'Data transaksi kosong atau tidak valid.']);
+    exit;
+}
+
+$createdAt    = $data['created_at'] ?? date('Y-m-d H:i:s');
+$totalKotor   = floatval($data['total_kotor'] ?? 0);
+$diskon       = floatval($data['diskon'] ?? 0);
+$totalBersih  = floatval($data['total_bersih'] ?? 0);
+$bayar        = floatval($data['bayar'] ?? 0);
+$kembalian    = floatval($data['kembalian'] ?? 0);
+$metodeBayar  = strtoupper(trim($data['metode_bayar'] ?? 'TUNAI'));
+$pelangganId  = intval($data['pelanggan_id'] ?? 0);
+$catatan      = trim($data['catatan'] ?? '');
+$items        = $data['items'];
+
+$noFaktur = 'TRX-' . date('Ymd-His');
+$namaPelanggan = '';
 
 try {
-    require_once __DIR__ . '/../config.php';
-    require_once BASE_PATH . 'database/db_barang.php';
-    require_once BASE_PATH . 'database/query_pos.php';
+    $pdoBarang->beginTransaction();
+    $pdo->beginTransaction();
 
-    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-        echo json_encode(['status' => false, 'message' => 'Method tidak diizinkan']);
-        exit;
-    }
+    $totalNominalPpob  = 0;
+    $totalBarangFisik  = 0;
+    $itemsBarangFisik  = [];
+    $itemsPpob         = [];
+    $rincianItemText   = [];
+    $rincianPpobText   = [];
 
-    $raw = file_get_contents('php://input');
-    $input = json_decode($raw, true);
+    foreach ($items as $item) {
+        $isJasa = !empty($item['is_jasa']) && (
+            $item['is_jasa'] === true || 
+            $item['is_jasa'] == 1 || 
+            $item['is_jasa'] === 'true'
+        );
 
-    if (!$input || empty($input['items'])) {
-        echo json_encode(['status' => false, 'message' => 'Keranjang belanja kosong!']);
-        exit;
-    }
-
-    $noFaktur     = $input['no_faktur'] ?? ('INV/' . date('Ymd') . '/' . rand(1000, 9999));
-    $tglTransaksi = !empty($input['tanggal']) ? $input['tanggal'] : date('Y-m-d');
-
-    $itemsFisik = [];
-    $itemsJasa  = [];
-    $totalFisik = 0;
-
-    // Pemisahan item keranjang: Jasa/PPOB vs Barang Fisik
-    foreach ($input['items'] as $item) {
-        $isJasa = !empty($item['is_jasa']);
+        $hargaJual   = floatval($item['harga_jual'] ?? 0);
+        $qty         = floatval($item['qty'] ?? 1);
+        $subtotal    = floatval($item['subtotal'] ?? ($hargaJual * $qty));
+        $namaBarang  = $item['nama_barang'] ?? 'Item';
+        $satuan      = $item['satuan'] ?? 'PCS';
 
         if ($isJasa) {
-            $itemsJasa[] = [
-                'kategori'   => $item['kategori'] ?? 'PPOB / Jasa',
-                'keterangan' => $item['keterangan'] ?? $item['nama_barang'] ?? '',
-                'harga_beli' => floatval($item['harga_beli'] ?? 0),
-                'harga_jual' => floatval($item['harga_jual'] ?? 0),
-                'qty'        => intval($item['qty'] ?? 1),
-                'subtotal'   => floatval($item['subtotal'] ?? 0)
-            ];
+            $totalNominalPpob += $subtotal;
+            $itemsPpob[] = $item;
+            $rincianPpobText[] = "{$namaBarang} ({$qty} {$satuan})";
         } else {
-            $sub = floatval($item['subtotal'] ?? 0);
-            $totalFisik += $sub;
-
-            $itemsFisik[] = [
-                'kemasan_id'   => intval($item['kemasan_id']),
-                'nama_barang'  => $item['nama_barang'] ?? '',
-                'nama_kemasan' => $item['nama_kemasan'] ?? '',
-                'qty'          => intval($item['qty']),
-                'satuan'       => $item['satuan'] ?? 'pcs',
-                'harga_beli'   => floatval($item['harga_beli'] ?? 0),
-                'harga_jual'   => floatval($item['harga_jual'] ?? 0),
-                'jenis_harga'  => $item['jenis_harga'] ?? 'ECER',
-                'subtotal'     => $sub
-            ];
+            $totalBarangFisik += $subtotal;
+            $itemsBarangFisik[] = $item;
         }
+
+        $rincianItemText[] = "{$namaBarang} ({$qty} {$satuan})";
     }
 
-    // =========================================================================
-    // 1. PROSES PENYIMPANAN JASA (Disesuaikan persis dengan Form Transaksi)
-    // =========================================================================
-    if (!empty($itemsJasa)) {
-        if (!isset($pdoKios)) {
-            $pathKios = BASE_PATH . 'database/kios.sqlite';
-            $pdoKios  = new PDO("sqlite:" . $pathKios);
-            $pdoKios->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-        }
+    // A. SIMPAN KE TABEL PENJUALAN (HANYA UNTUK TRANSAKSI TUNAI / NON-UTANG)
+    // Jika UTANG, jangan masuk ke tabel penjualan dulu agar omzet tidak tembus!
+    if ($metodeBayar !== 'UTANG' && count($itemsBarangFisik) > 0) {
+        $totalBersihBarang = $totalBarangFisik - $diskon;
+        if ($totalBersihBarang < 0) $totalBersihBarang = 0;
 
-        // Ambil saldo akhir terakhir untuk menghitung running saldo
-        $stmtSaldo = $pdoKios->query("SELECT saldo_akhir FROM transaksi ORDER BY id DESC LIMIT 1");
-        $lastRow   = $stmtSaldo->fetch(PDO::FETCH_ASSOC);
-        $lastSaldo = $lastRow ? floatval($lastRow['saldo_akhir']) : 0;
+        $stmtPenjualan = $pdoBarang->prepare("
+            INSERT INTO penjualan (no_faktur, pelanggan_id, total_kotor, diskon, total_bersih, bayar, kembalian, metode_bayar, catatan, tanggal)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ");
+        $stmtPenjualan->execute([
+            $noFaktur, 
+            $pelangganId > 0 ? $pelangganId : NULL, 
+            $totalBarangFisik, 
+            $diskon, 
+            $totalBersihBarang, 
+            $bayar, 
+            $kembalian, 
+            $metodeBayar, 
+            $catatan, 
+            $createdAt
+        ]);
+        $penjualanId = $pdoBarang->lastInsertId();
 
-        $runningSaldo = $lastSaldo;
-
-        $stmtTx = $pdoKios->prepare("
-            INSERT INTO transaksi (tanggal, tipe, kategori, nominal, saldo_akhir, keterangan)
-            VALUES (:tanggal, 'masuk', :kategori, :nominal, :saldo_akhir, :keterangan)
+        $stmtDetail = $pdoBarang->prepare("
+            INSERT INTO penjualan_detail (penjualan_id, barang_kemasan_id, nama_barang, nama_kemasan, qty, satuan, harga_beli, harga_jual, jenis_harga, subtotal)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ");
 
-        foreach ($itemsJasa as $jasa) {
-            $runningSaldo += $jasa['subtotal'];
+        foreach ($itemsBarangFisik as $itemFisik) {
+            $kemasanId   = intval($itemFisik['kemasan_id'] ?? 0);
+            $namaBarang  = $itemFisik['nama_barang'] ?? 'Item';
+            $namaKemasan = $itemFisik['nama_kemasan'] ?? '';
+            $satuan      = $itemFisik['satuan'] ?? 'PCS';
+            $hargaBeli   = floatval($itemFisik['harga_beli'] ?? 0);
+            $hargaJual   = floatval($itemFisik['harga_jual'] ?? 0);
+            $qty         = floatval($itemFisik['qty'] ?? 1);
+            $subtotal    = floatval($itemFisik['subtotal'] ?? ($hargaJual * $qty));
+            $jenisHarga  = $itemFisik['jenis_harga'] ?? 'ECER';
 
-            $stmtTx->execute([
-                ':tanggal'     => $tglTransaksi,
-                ':kategori'    => $jasa['kategori'],
-                ':nominal'     => $jasa['subtotal'],
-                ':saldo_akhir' => $runningSaldo,
-                ':keterangan'  => trim($jasa['keterangan'])
+            $stmtDetail->execute([
+                $penjualanId,
+                $kemasanId > 0 ? $kemasanId : NULL,
+                $namaBarang,
+                $namaKemasan,
+                $qty,
+                $satuan,
+                $hargaBeli,
+                $hargaJual,
+                $jenisHarga,
+                $subtotal
             ]);
         }
     }
 
-    // =========================================================================
-    // 2. PROSES PENYIMPANAN BARANG FISIK (ke barang.sqlite)
-    // =========================================================================
-    if (!empty($itemsFisik)) {
-        $headerFisik = [
-            'no_faktur'    => $noFaktur,
-            'pelanggan_id' => null,
-            'total_kotor'  => $totalFisik,
-            'diskon'       => floatval($input['diskon'] ?? 0),
-            'total_bersih' => $totalFisik - floatval($input['diskon'] ?? 0),
-            'bayar'        => floatval($input['bayar'] ?? 0),
-            'kembalian'    => floatval($input['kembalian'] ?? 0),
-            'metode_bayar' => $input['metode_bayar'] ?? 'TUNAI',
-            'catatan'      => $input['catatan'] ?? ''
-        ];
+    // B. POTONG STOK FISIK (TETAP BERJALAN WALAUPUN UTANG)
+    $stmtUpdateStok = $pdoBarang->prepare("UPDATE barang_kemasan SET stok = stok - ? WHERE id = ?");
+    foreach ($items as $item) {
+        $isJasa = !empty($item['is_jasa']) && (
+            $item['is_jasa'] === true || 
+            $item['is_jasa'] == 1 || 
+            $item['is_jasa'] === 'true'
+        );
+        $isStokAktif = !isset($item['stok_aktif']) || $item['stok_aktif'] == true;
+        $kemasanId   = intval($item['kemasan_id'] ?? 0);
+        $qty         = floatval($item['qty'] ?? 1);
 
-        simpanPenjualan($pdoBarang, $headerFisik, $itemsFisik);
+        if (!$isJasa && $kemasanId > 0 && $isStokAktif) {
+            $stmtUpdateStok->execute([$qty, $kemasanId]);
+        }
     }
 
+    // C. LOGIKA PPOB TUNAI -> MASUK KAS KEUANGAN
+    if ($totalNominalPpob > 0 && $metodeBayar !== 'UTANG') {
+        $stmtLast = $pdo->query("SELECT saldo_akhir FROM transaksi ORDER BY id DESC LIMIT 1");
+        $lastRow  = $stmtLast->fetch(PDO::FETCH_ASSOC);
+        $saldoTerakhir = $lastRow ? floatval($lastRow['saldo_akhir']) : 0;
+
+        $saldoAkhirBaru = $saldoTerakhir + $totalNominalPpob;
+        $tglKas = date('Y-m-d', strtotime($createdAt));
+        $ketPpobText = !empty($rincianPpobText) ? " (" . implode(', ', $rincianPpobText) . ")" : "";
+        $ketKas = "Hasil Penjualan PPOB/Jasa [#{$noFaktur}]{$ketPpobText}";
+
+        $stmtKeuangan = $pdo->prepare("
+            INSERT INTO transaksi (tanggal, tipe, kategori, nominal, saldo_akhir, keterangan)
+            VALUES (?, 'masuk', 'PPOB & Jasa', ?, ?, ?)
+        ");
+        $stmtKeuangan->execute([
+            $tglKas, 
+            $totalNominalPpob, 
+            $saldoAkhirBaru, 
+            $ketKas
+        ]);
+    }
+
+    // D. RECORD UTANG DI DB PELANGGAN
+    if ($metodeBayar === 'UTANG' && $pelangganId > 0) {
+        $stmtPel = $pdoPelanggan->prepare("SELECT nama FROM pelanggan WHERE id = ?");
+        $stmtPel->execute([$pelangganId]);
+        $pel = $stmtPel->fetch(PDO::FETCH_ASSOC);
+        if ($pel) {
+            $namaPelanggan = $pel['nama'];
+        }
+
+        $nominalUtang = $totalBersih - $bayar;
+
+        if ($nominalUtang > 0) {
+            $infoKategoriUtang = "";
+            if ($totalNominalPpob > 0 && count($itemsBarangFisik) > 0) {
+                $infoKategoriUtang = " (Barang + PPOB)";
+            } elseif ($totalNominalPpob > 0) {
+                $infoKategoriUtang = " (PPOB/Jasa)";
+            }
+
+            $ketUtang = "Bon Kasir{$infoKategoriUtang} [#{$noFaktur}] - Items: " . implode(', ', $rincianItemText);
+            if (!empty($catatan)) {
+                $ketUtang .= " | Ket: " . $catatan;
+            }
+
+            $itemsJson = json_encode($items);
+
+            $stmtUtang = $pdoPelanggan->prepare("
+                INSERT INTO utang (pelanggan_id, tipe, nominal, keterangan, items_json, created_at)
+                VALUES (?, 'utang', ?, ?, ?, ?)
+            ");
+            $stmtUtang->execute([
+                $pelangganId,
+                $nominalUtang,
+                $ketUtang,
+                $itemsJson,
+                $createdAt
+            ]);
+        }
+    }
+
+    $pdoBarang->commit();
+    $pdo->commit();
+
     echo json_encode([
-        'status'    => true,
-        'message'   => 'Transaksi berhasil diproses',
-        'no_faktur' => $noFaktur
+        'status' => true,
+        'message' => $metodeBayar === 'UTANG' ? 'Utang berhasil dicatat (stok dipotong).' : 'Transaksi berhasil disimpan.',
+        'no_faktur' => $noFaktur,
+        'nama_pelanggan' => $namaPelanggan
     ]);
 
-} catch (Exception $e) {
-    echo json_encode(['status' => false, 'message' => 'Error Server: ' . $e->getMessage()]);
+} catch (PDOException $e) {
+    if ($pdoBarang->inTransaction()) {
+        $pdoBarang->rollBack();
+    }
+    if ($pdo->inTransaction()) {
+        $pdo->rollBack();
+    }
+    echo json_encode([
+        'status' => false,
+        'message' => 'Database error: ' . $e->getMessage()
+    ]);
 }
