@@ -24,7 +24,7 @@ if (!function_exists('hitungSisaUtangSesi')) {
 
             foreach ($riwayat as $r) {
                 $nominal = floatval($r['nominal']);
-                
+
                 if ($r['tipe'] === 'utang') {
                     $totalUtangSesi += $nominal;
                 } else {
@@ -150,22 +150,17 @@ require_once BASE_PATH . 'partials/header.php';
     <div class="col-lg-4 mb-4">
       <div class="card shadow-sm border-0 p-3">
         <h5 class="card-title mb-3 fw-bold">Tambah Pelanggan Baru</h5>
-        
+
         <form hx-post="<?= BASE_URL; ?>pelanggan/" 
               hx-target="#area-pelanggan" 
               hx-swap="outerHTML"
               hx-on::after-request="if(event.detail.successful) this.reset();">
-          
+
           <input type="hidden" name="action" value="add">
 
           <div class="mb-3">
             <label class="form-label small fw-semibold">Nama Lengkap</label>
             <input type="text" name="nama" class="form-control" placeholder="Contoh: Baron" required>
-          </div>
-
-          <div class="mb-3">
-            <label class="form-label small fw-semibold">No. WhatsApp / HP</label>
-            <input type="text" name="no_hp" class="form-control" placeholder="08123456789">
           </div>
 
           <div class="mb-3">

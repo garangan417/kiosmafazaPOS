@@ -104,9 +104,10 @@ $riwayat = array_reverse($riwayatAsc);
         <div class="card bg-light border-0 p-3 mb-4">
           <h6 class="fw-bold mb-2 text-dark"><i class="bi bi-plus-circle me-1"></i> Transaksi Cepat</h6>
           
-          <form action="<?= BASE_URL; ?>utang/index.php" method="POST">
+          <form action="<?= BASE_URL; ?>utang/index.php" method="POST" onsubmit="setWaktuBrowserDetailUtang(this)">
             <input type="hidden" name="pelanggan_id" value="<?= $pelanggan['id']; ?>">
-            <input type="hidden" name="tanggal" value="<?= date('Y-m-d H:i:s'); ?>">
+            <!-- Input Tanggal Diisi Secara Client-Side (Waktu Browser Kasir) -->
+            <input type="hidden" name="tanggal" class="input-waktu-browser">
 
             <div class="row g-2">
               <div class="col-md-3">
@@ -124,7 +125,7 @@ $riwayat = array_reverse($riwayatAsc);
               </div>
 
               <div class="col-md-3">
-                <input type="text" name="keterangan" class="form-control form-control-sm" placeholder="Catatan (opsional)">
+                <textarea name="keterangan" class="form-control form-control-sm" rows="1" placeholder="Rincian barang / Catatan (Tekan Enter untuk baris baru)"></textarea>
               </div>
 
               <div class="col-md-2">
@@ -162,7 +163,13 @@ $riwayat = array_reverse($riwayatAsc);
                         <?= strtoupper($item['tipe']); ?>
                       </span>
                     </td>
-                    <td class="small"><?= htmlspecialchars($item['keterangan'] ?: '-'); ?></td>
+                    <td class="small">
+                      <?php if (!empty($item['keterangan'])): ?>
+                        <div><?= nl2br(htmlspecialchars(trim($item['keterangan']))); ?></div>
+                      <?php else: ?>
+                        <span class="text-muted">-</span>
+                      <?php endif; ?>
+                    </td>
                     <td class="text-end fw-bold text-<?= $item['tipe'] === 'utang' ? 'danger' : 'success'; ?>">
                       <?= $item['tipe'] === 'utang' ? '+' : '-'; ?> <?= formatRupiah($item['nominal']); ?>
                     </td>
@@ -177,7 +184,7 @@ $riwayat = array_reverse($riwayatAsc);
 
       <!-- Footer Modal -->
       <div class="modal-footer bg-light">
-        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Tutup</button>
+        <button type="button" class="btn-close-modal btn btn-secondary btn-sm" data-bs-dismiss="modal">Tutup</button>
       </div>
 
     </div>
@@ -190,6 +197,22 @@ if (typeof formatInputRibuan !== 'function') {
     let val = input.value.replace(/[^0-9]/g, '');
     if (!val) { input.value = ''; return; }
     input.value = new Intl.NumberFormat('id-ID').format(val);
+  }
+}
+
+// Skrip penentuan waktu dari browser saat modal utang dikirim
+function setWaktuBrowserDetailUtang(formElement) {
+  const now = new Date();
+  const yyyy = now.getFullYear();
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const dd = String(now.getDate()).padStart(2, '0');
+  const hh = String(now.getHours()).padStart(2, '0');
+  const ii = String(now.getMinutes()).padStart(2, '0');
+  const ss = String(now.getSeconds()).padStart(2, '0');
+
+  const inputWaktu = formElement.querySelector('.input-waktu-browser');
+  if (inputWaktu) {
+    inputWaktu.value = `${yyyy}-${mm}-${dd} ${hh}:${ii}:${ss}`;
   }
 }
 </script>

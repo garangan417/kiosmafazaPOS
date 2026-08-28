@@ -12,7 +12,8 @@ $isHtmx = isset($_SERVER['HTTP_HX_REQUEST']);
 // PROSES SIMPAN TRANSAKSI (POST)
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $tipe       = $_POST['tipe'] ?? 'masuk';
-    $tanggal    = $_POST['tanggal'] ?? date('Y-m-d');
+    // Ambil tanggal dari input form (yang diisi oleh browser)
+    $tanggal    = !empty($_POST['tanggal']) ? $_POST['tanggal'] : date('Y-m-d');
     $kategori   = trim($_POST['kategori'] ?? '');
     
     // Bersihkan titik pemisah ribuan dari input nominal
@@ -57,7 +58,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // A. PENANGANAN REQUEST VIA HTMX
     if ($isHtmx) {
-        // Persiapkan data transaksi & saldo terbaru untuk swap DOM
         $query = $pdo->query("SELECT * FROM transaksi ORDER BY tanggal DESC, id DESC LIMIT 50");
         $transaksi = $query->fetchAll(PDO::FETCH_ASSOC);
 
@@ -65,7 +65,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $currentSaldoRow  = $stmtCurrentSaldo->fetch(PDO::FETCH_ASSOC);
         $saldoKas         = $currentSaldoRow ? floatval($currentSaldoRow['saldo_akhir']) : 0;
 
-        // Kirim event SweetAlert2 via Header HTMX
         if (!empty($successMsg)) {
             header('HX-Trigger: ' . json_encode(['showToast' => ['icon' => 'success', 'title' => $successMsg]]));
         } elseif (!empty($errorMsg)) {
@@ -110,7 +109,7 @@ require_once BASE_PATH . 'partials/header.php';
         <form hx-post="<?= BASE_URL; ?>keuangan/index.php" 
               hx-target="#area-keuangan" 
               hx-swap="outerHTML"
-              hx-on::after-request="if(event.detail.successful) this.reset();">
+              hx-on::after-request="if(event.detail.successful) { this.reset(); setBrowserDate(); }">
           
           <div class="mb-3">
             <label class="form-label d-block fw-semibold">Jenis Transaksi</label>
@@ -123,9 +122,10 @@ require_once BASE_PATH . 'partials/header.php';
             </div>
           </div>
 
+          <!-- INPUT TANGGAL (NILAI DISET VIA JAVASCRIPT BROWSER) -->
           <div class="mb-3">
             <label class="form-label small fw-semibold">Tanggal</label>
-            <input type="date" name="tanggal" class="form-control" value="<?= date('Y-m-d'); ?>" required>
+            <input type="date" id="inputTanggal" name="tanggal" class="form-control" required>
           </div>
 
           <div class="mb-3">
@@ -174,8 +174,25 @@ require_once BASE_PATH . 'partials/header.php';
 
 </main>
 
-<script src="/assets/js/sweetalert2.all.min.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script>
+  // Set tanggal otomatis dari Browser (Client-side)
+  function setBrowserDate() {
+    const today = new Date();
+    const yyyy = today.getFullYear();
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const dd = String(today.getDate()).padStart(2, '0');
+    const inputTanggal = document.getElementById('inputTanggal');
+    if (inputTanggal) {
+      inputTanggal.value = `${yyyy}-${mm}-${dd}`;
+    }
+  }
+
+  // Jalankan saat halaman pertama kali selesai di-load
+  document.addEventListener("DOMContentLoaded", function() {
+    setBrowserDate();
+  });
+
   // Konfigurasi SweetAlert2 Toast
   const Toast = Swal.mixin({
     toast: true,

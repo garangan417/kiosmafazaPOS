@@ -7,7 +7,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $pelanggan_id = intval($_POST['pelanggan_id'] ?? 0);
     $tipe         = trim($_POST['tipe'] ?? 'utang');
     $keterangan   = trim($_POST['keterangan'] ?? '');
-    $tanggal      = $_POST['tanggal'] ?? date('Y-m-d H:i:s');
+    
+    // Utamakan tanggal & waktu dari browser/klien
+    // Format yang diharapkan dari JS: "YYYY-MM-DD HH:MM:SS"
+    $tanggal      = !empty($_POST['tanggal']) ? trim($_POST['tanggal']) : date('Y-m-d H:i:s');
     
     $nominal_raw  = $_POST['nominal'] ?? '0';
     $nominal      = floatval(preg_replace('/[^0-9]/', '', $nominal_raw));
