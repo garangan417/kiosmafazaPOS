@@ -104,7 +104,7 @@ require_once BASE_PATH . 'partials/header.php';
             <label class="form-label fw-bold small">Metode Pembayaran</label>
             <select id="metodeBayar" class="form-select" onchange="toggleFormUtang()">
               <option value="TUNAI" selected>TUNAI</option>
-              <option value="TRANSFER">TRANSFER / QRIS</option>
+              <option value="QRIS">QRIS</option>
               <option value="UTANG">UTANG / BON</option>
             </select>
           </div>
