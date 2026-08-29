@@ -85,6 +85,55 @@ function getBarangFavorit(PDO $pdo): array {
 }
 
 /**
+ * Hitung harga satuan & jenis harga (ECER / GROSIR) berdasarkan Tiering Qty
+ */
+function getHargaTiering(PDO $pdo, int $kemasanId, int $qty): array {
+    $stmt = $pdo->prepare("
+        SELECT 
+            harga_jual_ecer, 
+            harga_jual_grosir, 
+            min_qty_grosir 
+        FROM harga_barang 
+        WHERE barang_kemasan_id = ?
+    ");
+    $stmt->execute([$kemasanId]);
+    $harga = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$harga) {
+        return [
+            'harga_satuan' => 0.0,
+            'jenis_harga'  => 'ECER',
+            'subtotal'     => 0.0
+        ];
+    }
+
+    $hargaEcer   = floatval($harga['harga_jual_ecer']);
+    $hargaGrosir = floatval($harga['harga_jual_grosir']);
+    $minGrosir   = intval($harga['min_qty_grosir']);
+
+    return hitungHargaItem($hargaEcer, $hargaGrosir, $minGrosir, $qty);
+}
+
+/**
+ * Helper Hitung Harga Tiering berdasarkan nilai harga ecer, grosir, dan min qty
+ */
+function hitungHargaItem(float $hargaEcer, float $hargaGrosir, int $minGrosir, int $qty): array {
+    if ($hargaGrosir > 0 && $minGrosir > 0 && $qty >= $minGrosir) {
+        return [
+            'harga_satuan' => $hargaGrosir,
+            'jenis_harga'  => 'GROSIR',
+            'subtotal'     => $hargaGrosir * $qty
+        ];
+    }
+
+    return [
+        'harga_satuan' => $hargaEcer,
+        'jenis_harga'  => 'ECER',
+        'subtotal'     => $hargaEcer * $qty
+    ];
+}
+
+/**
  * Simpan Penjualan + Validasi Stok, Potong Stok & Catat Log Mutasi Otomatis
  */
 function simpanPenjualan(PDO $pdo, array $header, array $items): array {
@@ -177,6 +226,7 @@ function simpanPenjualan(PDO $pdo, array $header, array $items): array {
         // -------------------------------------------------------------
         foreach ($items as $item) {
             $kemasanId = intval($item['kemasan_id'] ?? 0);
+            $qtyJual   = intval($item['qty'] ?? 0);
             $modal     = floatval($item['harga_beli'] ?? 0);
 
             // Selalu validasi modal agar menggunakan modal per PCS dari DB jika modal tidak valid
@@ -188,17 +238,23 @@ function simpanPenjualan(PDO $pdo, array $header, array $items): array {
                 }
             }
 
+            // Hitung Ulang / Pastikan Harga & Jenis Harga Sesuai Tiering Qty
+            $hargaTiering   = getHargaTiering($pdo, $kemasanId, $qtyJual);
+            $hargaJualFinal = ($hargaTiering['harga_satuan'] > 0) ? $hargaTiering['harga_satuan'] : floatval($item['harga_jual'] ?? 0);
+            $jenisHarga     = $hargaTiering['harga_satuan'] > 0 ? $hargaTiering['jenis_harga'] : ($item['jenis_harga'] ?? 'ECER');
+            $subtotalFinal  = $hargaJualFinal * $qtyJual;
+
             $stmtD->execute([
                 $penjualanId,
                 $kemasanId,
                 $item['nama_barang'] ?? '',
                 $item['nama_kemasan'] ?? '',
-                intval($item['qty']),
+                $qtyJual,
                 $item['satuan'] ?? 'PCS',
                 $modal,
-                floatval($item['harga_jual']),
-                $item['jenis_harga'] ?? 'ECER',
-                floatval($item['subtotal'])
+                $hargaJualFinal,
+                $jenisHarga,
+                $subtotalFinal
             ]);
 
             // Jika Fitur Stok Aktif, Hitung Mutasi dan Update Stok di DB
@@ -207,10 +263,9 @@ function simpanPenjualan(PDO $pdo, array $header, array $items): array {
                 $stmtCurStok->execute([$kemasanId]);
                 $stokSebelum = intval($stmtCurStok->fetchColumn() ?: 0);
                 
-                $qtyJual = intval($item['qty']);
                 $stokSesudah = $stokSebelum - $qtyJual;
 
-                // Jika stok minus tidak diizinkan, jaga nilai tidak kurangan dari 0
+                // Jika stok minus tidak diizinkan, jaga nilai tidak kurang dari 0
                 if (!$bolehMinus && $stokSesudah < 0) {
                     $stokSesudah = 0;
                 }

@@ -245,3 +245,5 @@ document.addEventListener("DOMContentLoaded", function() {
   setInterval(updateClock, 1000);
 });
 </script>
+<script src="/assets/js/html5-qrcode.min.js"></script>
+<script src="/assets/js/sweetalert2.all.min.min.js"></script>

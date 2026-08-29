@@ -11,7 +11,7 @@ require_once BASE_PATH . 'partials/header.php';
 ?>
 
 <!-- HTML5-QRCode JS Library via CDN -->
-<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+// <script src="/assets/js/html5-qrcode.min.js"></script>
 
 <div class="container-fluid my-3 px-4">
   <div class="row g-3">
@@ -405,6 +405,25 @@ document.addEventListener("DOMContentLoaded", function() {
   loadPelangganList();
 });
 
+// Helper JavaScript untuk penentuan harga grosir berdasarkan Qty
+function hitungHargaTieringJS(item, qty) {
+  let hargaEcer   = parseFloat(item.harga_ecer || item.harga_jual || 0);
+  let hargaGrosir = parseFloat(item.harga_grosir || 0);
+  let minGrosir   = parseInt(item.min_qty_grosir || 0);
+
+  if (hargaGrosir > 0 && minGrosir > 0 && qty >= minGrosir) {
+    return {
+      harga_jual: hargaGrosir,
+      jenis_harga: 'GROSIR'
+    };
+  }
+
+  return {
+    harga_jual: hargaEcer,
+    jenis_harga: 'ECER'
+  };
+}
+
 // Helper JavaScript untuk format ribuan live saat mengetik di input text
 function formatInputRupiahJS(input) {
   let value = input.value.replace(/\D/g, ''); // Hapus semua karakter non-angka
@@ -487,6 +506,9 @@ function tambahJasaKeKeranjang() {
     harga_beli: 0,
     harga_jual: nominal,
     harga_ecer: nominal,
+    harga_grosir: 0,
+    min_qty_grosir: 0,
+    jenis_harga: 'ECER',
     qty: 1,
     subtotal: nominal,
     is_jasa: true,
@@ -612,9 +634,28 @@ function addToCart(item) {
   let existingIndex = cart.findIndex(c => isJasa ? (c.is_jasa && c.keterangan === item.keterangan) : (c.kemasan_id === item.kemasan_id));
 
   if (existingIndex > -1) {
-    cart[existingIndex].qty += 1;
-    cart[existingIndex].subtotal = cart[existingIndex].qty * cart[existingIndex].harga_jual;
+    let newQty = cart[existingIndex].qty + 1;
+    cart[existingIndex].qty = newQty;
+
+    // Hitung ulang harga jika barang fisik
+    if (!isJasa) {
+      let tiering = hitungHargaTieringJS(cart[existingIndex], newQty);
+      cart[existingIndex].harga_jual  = tiering.harga_jual;
+      cart[existingIndex].jenis_harga = tiering.jenis_harga;
+    }
+
+    cart[existingIndex].subtotal = newQty * cart[existingIndex].harga_jual;
   } else {
+    let initialQty = item.qty || 1;
+    let initialHarga = item.harga_jual || item.harga_ecer || 0;
+    let initialJenis = item.jenis_harga || 'ECER';
+
+    if (!isJasa) {
+      let tiering = hitungHargaTieringJS(item, initialQty);
+      initialHarga = tiering.harga_jual;
+      initialJenis = tiering.jenis_harga;
+    }
+
     cart.push({
       tipe: isJasa ? 'JASA' : 'BARANG',
       kemasan_id: item.kemasan_id || null,
@@ -622,9 +663,13 @@ function addToCart(item) {
       nama_kemasan: item.nama_kemasan || '',
       satuan: item.satuan || 'pcs',
       harga_beli: item.harga_beli || 0,
-      harga_jual: item.harga_jual || item.harga_ecer || 0,
-      qty: item.qty || 1,
-      subtotal: item.subtotal || item.harga_jual || item.harga_ecer || 0,
+      harga_ecer: item.harga_ecer || initialHarga,
+      harga_grosir: item.harga_grosir || 0,
+      min_qty_grosir: item.min_qty_grosir || 0,
+      harga_jual: initialHarga,
+      jenis_harga: initialJenis,
+      qty: initialQty,
+      subtotal: item.subtotal || (initialQty * initialHarga),
       is_jasa: isJasa,
       kategori: item.kategori || (isJasa ? 'PPOB / Jasa' : 'Barang Toko'),
       keterangan: item.keterangan || item.nama_barang
@@ -671,8 +716,18 @@ function renderCart() {
 
 function updateQty(index, val) {
   let qty = parseInt(val) || 1;
-  cart[index].qty = qty;
-  cart[index].subtotal = qty * cart[index].harga_jual;
+  let item = cart[index];
+
+  item.qty = qty;
+
+  // Jika bukan barang jasa/PPOB, update harganya secara otomatis berdasarkan Qty baru
+  if (!item.is_jasa) {
+    let tiering = hitungHargaTieringJS(item, qty);
+    item.harga_jual  = tiering.harga_jual;
+    item.jenis_harga = tiering.jenis_harga;
+  }
+
+  item.subtotal = qty * item.harga_jual;
   renderCart();
 }
 
