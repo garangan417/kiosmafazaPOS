@@ -174,7 +174,6 @@ require_once BASE_PATH . 'partials/header.php';
 
 </main>
 
-<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script>
   // Set tanggal otomatis dari Browser (Client-side)
   function setBrowserDate() {

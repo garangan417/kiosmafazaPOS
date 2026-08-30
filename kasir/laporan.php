@@ -167,7 +167,7 @@ require_once BASE_PATH . 'partials/header.php';
       <div class="card border-start border-4 border-primary shadow-sm">
         <div class="card-body py-2 px-3 d-flex justify-content-between align-items-center">
           <div>
-            <small class="text-muted fw-bold text-uppercase d-block"><i class="bi bi-qr-code-scan text-primary me-1"></i> Saldo QRIS (Bank/E-Wallet)</small>
+            <small class="text-muted fw-bold text-uppercase d-block"><i class="bi bi-qr-code-scan text-primary me-1"></i> QRIS</small>
             <h5 class="fw-bold mb-0 text-primary font-monospace">Rp <?= number_format($rekapMetode['QRIS'] ?? 0, 0, ',', '.'); ?></h5>
           </div>
           <span class="badge bg-primary-subtle text-primary border border-primary">QRIS</span>

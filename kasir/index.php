@@ -10,9 +10,6 @@ $barangFavorit = getBarangFavorit($pdoBarang);
 require_once BASE_PATH . 'partials/header.php';
 ?>
 
-<!-- HTML5-QRCode JS Library via CDN -->
-// <script src="/assets/js/html5-qrcode.min.js"></script>
-
 <div class="container-fluid my-3 px-4">
   <div class="row g-3">
     
@@ -159,7 +156,6 @@ require_once BASE_PATH . 'partials/header.php';
             <label class="form-label small fw-bold">Kategori Layanan</label>
             <select id="jasaKategori" class="form-select" required>
               <option value="Transfer Uang">Transfer Uang</option>
-              <option value="Tarik Tunai">Tarik Tunai</option>
               <option value="Topup E-Wallet">Topup E-Wallet</option>
               <option value="Pulsa & Data">Pulsa & Data</option>
               <option value="Token PLN">Token PLN</option>
@@ -697,7 +693,7 @@ function renderCart() {
           </td>
           <td class="font-monospace">Rp ${Math.round(item.harga_jual).toLocaleString('id-ID')}</td>
           <td>
-            <input type="number" class="form-control form-control-sm text-center font-monospace" min="1" value="${item.qty}" onchange="updateQty(${index}, this.value)">
+            <input type="number" class="form-control form-control-sm text-center font-monospace fw-bold" min="1" value="${item.qty}" onchange="updateQty(${index}, this.value)">
           </td>
           <td class="text-end font-monospace fw-bold">Rp ${Math.round(item.subtotal).toLocaleString('id-ID')}</td>
           <td class="text-center">
