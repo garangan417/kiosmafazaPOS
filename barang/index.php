@@ -210,7 +210,7 @@ if (!empty($searchQuery)) {
 
 // LOGIKA PAGINASI
 $totalItems   = count($allBarang);
-$limit        = 50; // Jumlah item per halaman
+$limit        = 15; // Jumlah item per halaman
 $totalPages   = max(1, ceil($totalItems / $limit));
 $currentPage  = max(1, min($totalPages, intval($_GET['page'] ?? 1)));
 $offset       = ($currentPage - 1) * $limit;
@@ -646,14 +646,39 @@ require_once BASE_PATH . 'partials/header.php';
                   </a>
                 </li>
 
-                <!-- Angka Halaman -->
-                <?php for ($i = 1; $i <= $totalPages; $i++): ?>
-                  <li class="page-item <?= ($i === $currentPage) ? 'active' : ''; ?>">
-                    <a class="page-link" href="<?= $buildPageUrl($i); ?>">
-                      <?= $i; ?>
-                    </a>
-                  </li>
-                <?php endfor; ?>
+               <!-- Angka Halaman dengan Limit Windowing -->
+<?php
+$range = 2; // Menampilkan 2 halaman di kiri & 2 halaman di kanan dari halaman aktif
+
+// Halaman Pertama selalu muncul
+if ($currentPage > ($range + 1)) {
+    echo '<li class="page-item"><a class="page-link" href="' . $buildPageUrl(1) . '">1</a></li>';
+    if ($currentPage > ($range + 2)) {
+        echo '<li class="page-item disabled"><span class="page-link">&hellip;</span></li>';
+    }
+}
+
+// Halaman di sekitar halaman aktif
+$start = max(1, $currentPage - $range);
+$end   = min($totalPages, $currentPage + $range);
+
+for ($i = $start; $i <= $end; $i++): ?>
+  <li class="page-item <?= ($i === $currentPage) ? 'active' : ''; ?>">
+    <a class="page-link" href="<?= $buildPageUrl($i); ?>">
+      <?= $i; ?>
+    </a>
+  </li>
+<?php endfor; ?>
+
+<?php
+// Halaman Terakhir selalu muncul
+if ($currentPage < ($totalPages - $range)) {
+    if ($currentPage < ($totalPages - $range - 1)) {
+        echo '<li class="page-item disabled"><span class="page-link">&hellip;</span></li>';
+    }
+    echo '<li class="page-item"><a class="page-link" href="' . $buildPageUrl($totalPages) . '">' . $totalPages . '</a></li>';
+}
+?>
 
                 <!-- Tombol Next -->
                 <li class="page-item <?= ($currentPage >= $totalPages) ? 'disabled' : ''; ?>">
