@@ -1,6 +1,6 @@
 <footer class="bg-white text-center text-lg-start mt-auto py-3 border-top">
   <div class="container text-center text-muted small">
-    &copy; <?= date('Y'); ?> Kios App. All rights reserved.
+    &copy; <?= date('Y'); ?> Mafaza App. All rights reserved.
   </div>
 </footer>
 

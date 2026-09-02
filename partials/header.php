@@ -15,7 +15,7 @@ $current_page = $_SERVER['REQUEST_URI'];
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Kios App</title>
+  <title>Mafaza App</title>
 
   <!-- CSS Assets (Lokal) -->
   <link rel="stylesheet" href="/assets/css/bootstrap.min.css">
@@ -84,7 +84,7 @@ $current_page = $_SERVER['REQUEST_URI'];
 
 <header class="navbar navbar-expand-lg navbar-dark bg-dark shadow-sm sticky-top">
   <div class="container">
-    <a class="navbar-brand fw-bold" href="<?= BASE_URL; ?>">Kios App</a>
+    <a class="navbar-brand fw-bold" href="<?= BASE_URL; ?>">Mafaza App</a>
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
       <span class="navbar-toggler-icon"></span>
