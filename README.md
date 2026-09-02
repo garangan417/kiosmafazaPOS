@@ -6,7 +6,7 @@ Aplikasi Point of Sales (Kasir), Stok Barang, dan Manajemen Utang untuk Kios Maf
 - **Kasir / Transaksi**: Checkout, cari produk, scan barcode, favorit.
 - **Manajemen Barang & Stok**: Kategori barang, harga, penyesuaian stok.
 - **Utang & Pelanggan**: Detail utang pelanggan dan area pelunasan.
-- **Keuangan**: Laporan transaksi dan arus kas.
+- **Keuangan**: Laporan transaksi PPOB
 
 ## 🛠️ Tech Stack
 - **Backend**: PHP, SQLite
