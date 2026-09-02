@@ -7,9 +7,10 @@ require_once __DIR__ . '/../config.php';
 require_once BASE_PATH . 'database/db_barang.php';
 require_once BASE_PATH . 'database/query_barang.php';
 
-// TANGKAP PARAMETER URL (SEARCH & BARCODE REDIRECT)
+// TANGKAP PARAMETER URL (SEARCH, KATEGORI & BARCODE REDIRECT)
 $barcodeFromUrl = isset($_GET['barcode']) ? trim($_GET['barcode']) : '';
 $searchQuery    = isset($_GET['q']) ? trim($_GET['q']) : '';
+$kategoriId     = isset($_GET['kategori_id']) ? intval($_GET['kategori_id']) : 0;
 
 // PROSES POST
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -178,6 +179,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $queryParams = [];
     if (!empty($barcodeFromUrl)) $queryParams['barcode'] = $barcodeFromUrl;
     if (!empty($searchQuery)) $queryParams['q'] = $searchQuery;
+    if ($kategoriId > 0) $queryParams['kategori_id'] = $kategoriId;
     if (isset($_GET['page'])) $queryParams['page'] = intval($_GET['page']);
 
     $queryString = !empty($queryParams) ? '?' . http_build_query($queryParams) : '';
@@ -191,17 +193,27 @@ $listKategori = $pdoBarang->query("SELECT * FROM kategori ORDER BY nama_kategori
 // AMBIL SEMUA DAFTAR BARANG
 $allBarang = getDaftarBarangLengkap($pdoBarang);
 
-// FITUR PENCARIAN (Berdasarkan Nama Barang, Kemasan, atau Barcode)
-if (!empty($searchQuery)) {
+// FITUR PENCARIAN & FILTER KATEGORI
+if (!empty($searchQuery) || $kategoriId > 0) {
     $searchLower = mb_strtolower($searchQuery);
-    $allBarang = array_filter($allBarang, function ($item) use ($searchLower) {
-        $namaBarang  = mb_strtolower($item['nama_barang'] ?? '');
-        $namaKemasan = mb_strtolower($item['nama_kemasan'] ?? '');
-        $listBarcode = mb_strtolower($item['list_barcode'] ?? '');
+    
+    $allBarang = array_filter($allBarang, function ($item) use ($searchLower, $kategoriId) {
+        // Filter Berdasarkan Kategori
+        $matchKategori = ($kategoriId === 0) || (isset($item['kategori_id']) && (int)$item['kategori_id'] === $kategoriId);
 
-        return str_contains($namaBarang, $searchLower)
-            || str_contains($namaKemasan, $searchLower)
-            || str_contains($listBarcode, $searchLower);
+        // Filter Berdasarkan Teks Pencarian
+        $matchText = true;
+        if (!empty($searchLower)) {
+            $namaBarang  = mb_strtolower($item['nama_barang'] ?? '');
+            $namaKemasan = mb_strtolower($item['nama_kemasan'] ?? '');
+            $listBarcode = mb_strtolower($item['list_barcode'] ?? '');
+
+            $matchText = str_contains($namaBarang, $searchLower)
+                      || str_contains($namaKemasan, $searchLower)
+                      || str_contains($listBarcode, $searchLower);
+        }
+
+        return $matchKategori && $matchText;
     });
 
     // Re-index array setelah difilter
@@ -219,10 +231,11 @@ $offset       = ($currentPage - 1) * $limit;
 $daftarBarang = array_slice($allBarang, $offset, $limit);
 
 // Helper Query String untuk Pagination Link
-$buildPageUrl = function ($page) use ($searchQuery, $barcodeFromUrl) {
+$buildPageUrl = function ($page) use ($searchQuery, $barcodeFromUrl, $kategoriId) {
     $params = ['page' => $page];
     if (!empty($searchQuery)) $params['q'] = $searchQuery;
     if (!empty($barcodeFromUrl)) $params['barcode'] = $barcodeFromUrl;
+    if ($kategoriId > 0) $params['kategori_id'] = $kategoriId;
     return '?' . http_build_query($params);
 };
 
@@ -308,24 +321,36 @@ require_once BASE_PATH . 'partials/header.php';
               <span class="badge bg-secondary"><?= $totalItems; ?> Varian Item</span>
             </div>
 
-            <!-- FORM PENCARIAN -->
+            <!-- FORM PENCARIAN & FILTER KATEGORI -->
             <div class="col-md-7">
               <form action="" method="GET" class="d-flex gap-2">
                 <?php if (!empty($barcodeFromUrl)): ?>
                   <input type="hidden" name="barcode" value="<?= htmlspecialchars($barcodeFromUrl); ?>">
                 <?php endif; ?>
                 
+                <!-- Dropdown Pilih Kategori -->
+                <select name="kategori_id" class="form-select form-select-sm" style="max-width: 160px;" onchange="this.form.submit()">
+                  <option value="0">-- Semua Kategori --</option>
+                  <?php foreach ($listKategori as $kat): ?>
+                    <option value="<?= $kat['id']; ?>" <?= ($kategoriId === (int)$kat['id']) ? 'selected' : ''; ?>>
+                      <?= htmlspecialchars($kat['nama_kategori']); ?>
+                    </option>
+                  <?php endforeach; ?>
+                </select>
+
+                <!-- Input Text Search -->
                 <div class="input-group input-group-sm">
                   <span class="input-group-text bg-light border-end-0"><i class="bi bi-search text-muted"></i></span>
                   <input type="text" 
                          name="q" 
                          class="form-control border-start-0 ps-0" 
-                         placeholder="Cari nama barang atau barcode..." 
+                         placeholder="Cari barang / barcode..." 
                          value="<?= htmlspecialchars($searchQuery); ?>">
-                  <?php if (!empty($searchQuery)): ?>
+                  
+                  <?php if (!empty($searchQuery) || $kategoriId > 0): ?>
                     <a href="<?= $_SERVER['PHP_SELF'] . (!empty($barcodeFromUrl) ? '?barcode=' . urlencode($barcodeFromUrl) : ''); ?>" 
                        class="btn btn-outline-secondary" 
-                       title="Reset Pencarian">
+                       title="Reset Filter">
                       <i class="bi bi-x-lg"></i>
                     </a>
                   <?php endif; ?>
@@ -351,9 +376,9 @@ require_once BASE_PATH . 'partials/header.php';
               <?php if (empty($daftarBarang)): ?>
                 <tr>
                   <td colspan="5" class="text-center text-muted py-4">
-                    <?php if (!empty($searchQuery)): ?>
+                    <?php if (!empty($searchQuery) || $kategoriId > 0): ?>
                       <i class="bi bi-search d-block fs-3 mb-2 text-secondary"></i>
-                      Tidak ditemukan barang dengan kata kunci "<strong><?= htmlspecialchars($searchQuery); ?></strong>".
+                      Tidak ditemukan barang sesuai kriteria filter/pencarian.
                     <?php else: ?>
                       Belum ada data barang.
                     <?php endif; ?>
@@ -646,39 +671,39 @@ require_once BASE_PATH . 'partials/header.php';
                   </a>
                 </li>
 
-               <!-- Angka Halaman dengan Limit Windowing -->
-<?php
-$range = 2; // Menampilkan 2 halaman di kiri & 2 halaman di kanan dari halaman aktif
+                <!-- Angka Halaman dengan Limit Windowing -->
+                <?php
+                $range = 2; // Menampilkan 2 halaman di kiri & 2 halaman di kanan dari halaman aktif
 
-// Halaman Pertama selalu muncul
-if ($currentPage > ($range + 1)) {
-    echo '<li class="page-item"><a class="page-link" href="' . $buildPageUrl(1) . '">1</a></li>';
-    if ($currentPage > ($range + 2)) {
-        echo '<li class="page-item disabled"><span class="page-link">&hellip;</span></li>';
-    }
-}
+                // Halaman Pertama selalu muncul
+                if ($currentPage > ($range + 1)) {
+                    echo '<li class="page-item"><a class="page-link" href="' . $buildPageUrl(1) . '">1</a></li>';
+                    if ($currentPage > ($range + 2)) {
+                        echo '<li class="page-item disabled"><span class="page-link">&hellip;</span></li>';
+                    }
+                }
 
-// Halaman di sekitar halaman aktif
-$start = max(1, $currentPage - $range);
-$end   = min($totalPages, $currentPage + $range);
+                // Halaman di sekitar halaman aktif
+                $start = max(1, $currentPage - $range);
+                $end   = min($totalPages, $currentPage + $range);
 
-for ($i = $start; $i <= $end; $i++): ?>
-  <li class="page-item <?= ($i === $currentPage) ? 'active' : ''; ?>">
-    <a class="page-link" href="<?= $buildPageUrl($i); ?>">
-      <?= $i; ?>
-    </a>
-  </li>
-<?php endfor; ?>
+                for ($i = $start; $i <= $end; $i++): ?>
+                  <li class="page-item <?= ($i === $currentPage) ? 'active' : ''; ?>">
+                    <a class="page-link" href="<?= $buildPageUrl($i); ?>">
+                      <?= $i; ?>
+                    </a>
+                  </li>
+                <?php endfor; ?>
 
-<?php
-// Halaman Terakhir selalu muncul
-if ($currentPage < ($totalPages - $range)) {
-    if ($currentPage < ($totalPages - $range - 1)) {
-        echo '<li class="page-item disabled"><span class="page-link">&hellip;</span></li>';
-    }
-    echo '<li class="page-item"><a class="page-link" href="' . $buildPageUrl($totalPages) . '">' . $totalPages . '</a></li>';
-}
-?>
+                <?php
+                // Halaman Terakhir selalu muncul
+                if ($currentPage < ($totalPages - $range)) {
+                    if ($currentPage < ($totalPages - $range - 1)) {
+                        echo '<li class="page-item disabled"><span class="page-link">&hellip;</span></li>';
+                    }
+                    echo '<li class="page-item"><a class="page-link" href="' . $buildPageUrl($totalPages) . '">' . $totalPages . '</a></li>';
+                }
+                ?>
 
                 <!-- Tombol Next -->
                 <li class="page-item <?= ($currentPage >= $totalPages) ? 'disabled' : ''; ?>">

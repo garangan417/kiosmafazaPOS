@@ -70,6 +70,7 @@ function getDaftarHargaLengkap(PDO $pdo, string $search = ''): array {
     $sql = "SELECT 
                 bk.id AS kemasan_id,
                 b.id AS barang_id,
+                b.kategori_id AS kategori_id, -- TAMBAHAN: Dibutuhkan untuk filter dropdown kategori di UI
                 b.nama_barang,
                 k.nama_kategori,
                 bk.nama_kemasan,

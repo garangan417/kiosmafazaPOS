@@ -31,6 +31,7 @@ function cariBarangByBarcode($pdo, $barcode) {
 function getDaftarBarangLengkap($pdo) {
     $sql = "SELECT 
                 b.id AS barang_id,
+                b.kategori_id, -- TAMBAHAN: Dibutuhkan untuk filter dropdown kategori di UI
                 b.nama_barang,
                 k.nama_kategori,
                 bk.id AS kemasan_id,

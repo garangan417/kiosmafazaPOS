@@ -7,8 +7,36 @@ require_once __DIR__ . '/../config.php';
 require_once BASE_PATH . 'database/db_barang.php';
 require_once BASE_PATH . 'database/query_harga.php';
 
-// TANGKAP QUERY PENCARIAN DARI URL
-$search = trim($_GET['search'] ?? '');
+// HELPER PAGINASI REUSABLE
+if (!function_exists('paginateArray')) {
+    function paginateArray(array $data, int $page = 1, int $perPage = 10): array {
+        $page = max(1, $page);
+        $totalItems = count($data);
+        $totalPages = (int) ceil($totalItems / $perPage);
+
+        if ($page > $totalPages && $totalPages > 0) {
+            $page = $totalPages;
+        }
+
+        $offset = ($page - 1) * $perPage;
+        $items  = array_slice($data, $offset, $perPage);
+
+        return [
+            'items'        => $items,
+            'total_items'  => $totalItems,
+            'total_pages'  => $totalPages,
+            'current_page' => $page,
+            'per_page'     => $perPage,
+            'from'         => $totalItems > 0 ? $offset + 1 : 0,
+            'to'           => min($offset + $perPage, $totalItems),
+        ];
+    }
+}
+
+// TANGKAP QUERY PENCARIAN, KATEGORI & HALAMAN DARI URL
+$search     = trim($_GET['search'] ?? '');
+$kategoriId = intval($_GET['kategori_id'] ?? 0);
+$page       = intval($_GET['page'] ?? 1);
 
 function cleanCurrency($value) {
     return floatval(preg_replace('/[^0-9]/', '', $value));
@@ -40,14 +68,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
-    // Redirect untuk menjaga PRG pattern & mempertahankan parameter search di URL jika ada
-    $redirectUrl = $_SERVER['PHP_SELF'] . (!empty($search) ? '?search=' . urlencode($search) : '');
+    // Redirect untuk menjaga PRG pattern & mempertahankan parameter URL
+    $params = [];
+    if (!empty($search)) $params['search'] = $search;
+    if ($kategoriId > 0) $params['kategori_id'] = $kategoriId;
+    if ($page > 1) $params['page'] = $page;
+
+    $redirectUrl = $_SERVER['PHP_SELF'] . (!empty($params) ? '?' . http_build_query($params) : '');
     header("Location: " . $redirectUrl);
     exit;
 }
 
+// AMBIL MASTER KATEGORI UNTUK DROPDOWN FILTER
+$listKategori = $pdoBarang->query("SELECT id, nama_kategori FROM kategori ORDER BY nama_kategori ASC")->fetchAll();
+
 // AMBIL DAFTAR HARGA BARANG (SESUAI SEARCH)
-$daftarHarga = getDaftarHargaLengkap($pdoBarang, $search);
+$allDaftarHarga = getDaftarHargaLengkap($pdoBarang, $search);
+
+// FILTER KATEGORI DI SISI PHP JIKA DIPILIH
+if ($kategoriId > 0 && !empty($allDaftarHarga)) {
+    $allDaftarHarga = array_values(array_filter($allDaftarHarga, function ($row) use ($kategoriId) {
+        return isset($row['kategori_id']) && intval($row['kategori_id']) === $kategoriId;
+    }));
+}
+
+// BUNGKUS DENGAN HELPER PAGINASI (Default 10 item per halaman)
+$pagination  = paginateArray($allDaftarHarga, $page, 10);
+$daftarHarga = $pagination['items'];
 
 require_once BASE_PATH . 'partials/header.php';
 ?>
@@ -64,14 +111,25 @@ require_once BASE_PATH . 'partials/header.php';
           <small class="text-muted">Atur harga beli modal dan harga jual ecer/grosir.</small>
         </div>
 
-        <!-- Form Pencarian Nama / Barcode -->
+        <!-- Form Filter Kategori & Pencarian Nama / Barcode -->
         <div class="col-md-7">
           <form action="" method="GET" class="d-flex gap-2">
+            <!-- Dropdown Filter Kategori -->
+            <select name="kategori_id" class="form-select" style="max-width: 180px;" onchange="this.form.submit()">
+              <option value="0">-- Semua Kategori --</option>
+              <?php foreach ($listKategori as $kat): ?>
+                <option value="<?= $kat['id']; ?>" <?= ($kategoriId === intval($kat['id'])) ? 'selected' : ''; ?>>
+                  <?= htmlspecialchars($kat['nama_kategori']); ?>
+                </option>
+              <?php endforeach; ?>
+            </select>
+
+            <!-- Input Teks Pencarian -->
             <div class="input-group">
               <span class="input-group-text bg-light border-end-0"><i class="bi bi-search text-muted"></i></span>
               <input type="text" name="search" id="input_search" class="form-control border-start-0" placeholder="Ketik nama barang / scan barcode..." value="<?= htmlspecialchars($search); ?>" autocomplete="off" autofocus>
-              <?php if (!empty($search)): ?>
-                <a href="harga.php" class="btn btn-outline-secondary" title="Reset Pencarian"><i class="bi bi-x-lg"></i></a>
+              <?php if (!empty($search) || $kategoriId > 0): ?>
+                <a href="harga.php" class="btn btn-outline-secondary" title="Reset Filter"><i class="bi bi-x-lg"></i></a>
               <?php endif; ?>
               <button type="submit" class="btn btn-primary fw-bold px-3">Cari</button>
             </div>
@@ -81,11 +139,19 @@ require_once BASE_PATH . 'partials/header.php';
       </div>
     </div>
 
-    <!-- Info hasil pencarian -->
-    <?php if (!empty($search)): ?>
+    <!-- Info hasil pencarian & filter -->
+    <?php if (!empty($search) || $kategoriId > 0): ?>
       <div class="bg-light px-3 py-2 border-bottom d-flex justify-content-between align-items-center">
-        <small class="text-muted">Hasil pencarian untuk: <strong class="text-dark">"<?= htmlspecialchars($search); ?>"</strong></small>
-        <span class="badge bg-primary"><?= count($daftarHarga); ?> Ditemukan</span>
+        <small class="text-muted">
+          Filter aktif: 
+          <?php if (!empty($search)): ?>
+            Teks: <strong class="text-dark">"<?= htmlspecialchars($search); ?>"</strong>
+          <?php endif; ?>
+          <?php if ($kategoriId > 0): ?>
+            <?= !empty($search) ? '| ' : ''; ?>Kategori ID: <strong class="text-dark">#<?= $kategoriId; ?></strong>
+          <?php endif; ?>
+        </small>
+        <span class="badge bg-primary"><?= $pagination['total_items']; ?> Ditemukan</span>
       </div>
     <?php endif; ?>
 
@@ -108,7 +174,7 @@ require_once BASE_PATH . 'partials/header.php';
             <tr>
               <td colspan="8" class="text-center text-muted py-5">
                 <i class="bi bi-box-seam display-6 d-block mb-2 text-muted"></i>
-                <?= !empty($search) ? 'Barang atau barcode "' . htmlspecialchars($search) . '" tidak ditemukan.' : 'Belum ada data barang / kemasan.'; ?>
+                <?= (!empty($search) || $kategoriId > 0) ? 'Data barang tidak ditemukan sesuai filter yang dipilih.' : 'Belum ada data barang / kemasan.'; ?>
               </td>
             </tr>
           <?php else: ?>
@@ -268,6 +334,48 @@ require_once BASE_PATH . 'partials/header.php';
         </tbody>
       </table>
     </div>
+
+    <!-- UI ELEMENT PAGINASI -->
+    <?php if ($pagination['total_pages'] > 1): ?>
+      <div class="card-footer bg-white py-3 border-top-0">
+        <div class="d-flex flex-column flex-md-row justify-content-between align-items-center gap-2">
+          <small class="text-muted">
+            Menampilkan <strong><?= $pagination['from']; ?></strong>-<strong><?= $pagination['to']; ?></strong> dari <strong><?= $pagination['total_items']; ?></strong> data
+          </small>
+
+          <nav>
+            <ul class="pagination pagination-sm mb-0">
+              <?php $queryParams = $_GET; ?>
+
+              <!-- Tombol Prev -->
+              <li class="page-item <?= ($pagination['current_page'] <= 1) ? 'disabled' : ''; ?>">
+                <?php $queryParams['page'] = $pagination['current_page'] - 1; ?>
+                <a class="page-link" href="?<?= http_build_query($queryParams); ?>">Previous</a>
+              </li>
+
+              <!-- Nomor Halaman -->
+              <?php for ($i = 1; $i <= $pagination['total_pages']; $i++): ?>
+                <?php if ($i == 1 || $i == $pagination['total_pages'] || abs($i - $pagination['current_page']) <= 1): ?>
+                  <?php $queryParams['page'] = $i; ?>
+                  <li class="page-item <?= ($i === $pagination['current_page']) ? 'active' : ''; ?>">
+                    <a class="page-link" href="?<?= http_build_query($queryParams); ?>"><?= $i; ?></a>
+                  </li>
+                <?php elseif ($i == 2 || $i == $pagination['total_pages'] - 1): ?>
+                  <li class="page-item disabled"><span class="page-link">…</span></li>
+                <?php endif; ?>
+              <?php endfor; ?>
+
+              <!-- Tombol Next -->
+              <li class="page-item <?= ($pagination['current_page'] >= $pagination['total_pages']) ? 'disabled' : ''; ?>">
+                <?php $queryParams['page'] = $pagination['current_page'] + 1; ?>
+                <a class="page-link" href="?<?= http_build_query($queryParams); ?>">Next</a>
+              </li>
+            </ul>
+          </nav>
+        </div>
+      </div>
+    <?php endif; ?>
+
   </div>
 </main>
 
