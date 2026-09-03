@@ -170,7 +170,7 @@ $current_page = $_SERVER['REQUEST_URI'];
                 <i class="bi bi-tags me-2"></i>Kategori Barang
               </a>
             </li>
-            <li><hr class="dropdown-divider"></li>
+        
             <li>
               <a class="dropdown-item <?= stristr($current_page, 'harga.php') ? 'active' : ''; ?>" 
                  href="<?= BASE_URL; ?>barang/harga.php">
@@ -203,11 +203,19 @@ $current_page = $_SERVER['REQUEST_URI'];
                 <i class="bi bi-boxes me-2"></i>Stok
               </a>
             </li>
-            <li><hr class="dropdown-divider"></li>
+            
             <li>
               <a class="dropdown-item <?= stristr($current_page, 'kasir/laporan.php') ? 'active' : ''; ?>" 
                  href="<?= BASE_URL; ?>kasir/laporan.php">
                 <i class="bi bi-file-earmark-text me-2"></i>Laporan
+              </a>
+            </li>
+
+ 
+            <li>
+              <a class="dropdown-item <?= stristr($current_page, 'kasir/laporan_kategori.php') ? 'active' : ''; ?>" 
+                 href="<?= BASE_URL; ?>kasir/laporan_kategori.php">
+                <i class="bi bi-file-earmark-text me-2"></i>Item terjual
               </a>
             </li>
           </ul>

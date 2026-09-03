@@ -8,7 +8,7 @@ require_once BASE_PATH . 'database/db_barang.php';
 
 // Filter Tanggal (Default: Hari Ini)
 $tglMulai   = $_GET['tgl_mulai'] ?? date('Y-m-d');
-$tglSelesai = $_GET['tgl_selesai'] ?? date('Y-m-d');
+$tglSelesai = $_GET['tgl_selesai'] ?? date('Y-m-t');
 
 try {
     // 1. Total Summary (Omzet, Modal, & Laba)

@@ -33,3 +33,6 @@ function formatRupiah($angka, $denganRp = true) {
     $prefix = $denganRp ? 'Rp ' : '';
     return $prefix . number_format((float)$angka, 0, ',', '.');
 }
+
+// Set zona waktu PHP agar pas dengan waktu lokal Indonesia
+date_default_timezone_set('Asia/Makassar'); // Gunakan 'Asia/Makassar' untuk WITA atau 'Asia/Jayapura' untuk WIT

@@ -15,7 +15,7 @@ $isHtmx = isset($_SERVER['HTTP_HX_REQUEST']);
 // Tangkap Parameter Filter (Default: Hari Ini)
 $today    = date('Y-m-d');
 $tglAwal  = $_GET['tgl_awal'] ?? $today;
-$tglAkhir = $_GET['tgl_akhir'] ?? $today;
+$tglAkhir = $_GET['tgl_akhir'] ?? date('Y-m-t', strtotime($today));
 $tipe     = $_GET['tipe'] ?? 'semua';
 $kategori = trim($_GET['kategori'] ?? '');
 $search   = trim($_GET['q'] ?? '');
