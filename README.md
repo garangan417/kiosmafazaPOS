@@ -15,3 +15,4 @@ Aplikasi Point of Sales (Kasir), Stok Barang, dan Manajemen Utang untuk Kios Maf
 
 ## 📌 Catatan
 Database SQLite di-ignore demi keamanan data lokal.
+user login default : admin ,password : admin123
