@@ -1,4 +1,8 @@
 <?php
+// Load Auth Middleware & Proteksi Login Global
+require_once __DIR__ . '/../auth.php';
+//check_login();
+
 // Pastikan BASE_URL sudah terdefinisi
 if (!defined('BASE_URL')) {
     define('BASE_URL', '/');
@@ -93,7 +97,7 @@ $current_page = $_SERVER['REQUEST_URI'];
     <div class="collapse navbar-collapse" id="navbarNav">
       <ul class="navbar-nav ms-auto gap-lg-1 align-items-lg-center">
         
-        <!-- Widget Waktu Server (Di dalam UL agar HTML Valid) -->
+        <!-- Widget Waktu Server -->
         <li class="nav-item me-lg-2 my-2 my-lg-0">
           <div class="badge bg-secondary bg-opacity-25 text-light fw-normal border border-secondary px-3 py-1 text-start text-lg-center">
             <small class="d-block text-muted" style="font-size: 0.65rem; line-height: 1;">WAKTU SERVER</small>
@@ -114,34 +118,27 @@ $current_page = $_SERVER['REQUEST_URI'];
              href="<?= BASE_URL; ?>pelanggan/">Pelanggan</a>
         </li>
         
-         <!-- Dropdown PPOB -->
+        <!-- Dropdown PPOB -->
         <li class="nav-item dropdown">
           <a class="nav-link dropdown-toggle <?= stristr($current_page, '/keuangan/') ? 'active' : ''; ?>" 
              href="#" 
-             id="navbarDropdownBarang" 
+             id="navbarDropdownPPOB" 
              role="button" 
              data-bs-toggle="dropdown" 
              aria-expanded="false">
             PPOB
           </a>
-          <ul class="dropdown-menu dropdown-menu-dark" aria-labelledby="navbarDropdownBarang">
+          <ul class="dropdown-menu dropdown-menu-dark" aria-labelledby="navbarDropdownPPOB">
             <li>
-              <a class="dropdown-item <?= (stristr($current_page, '/keuangan/') && !stristr($current_page, 'index.php') && !stristr($current_page, 'kategori.php')) ? 'active' : ''; ?>" 
+              <a class="dropdown-item <?= (stristr($current_page, '/keuangan/') && !stristr($current_page, 'laporan.php')) ? 'active' : ''; ?>" 
                  href="<?= BASE_URL; ?>keuangan/">
                 <i class="bi bi-box-seam me-2"></i>Data PPOB
               </a>
             </li>
             <li>
-              <a class="dropdown-item <?= stristr($current_page, 'laporan.php') ? 'active' : ''; ?>" 
+              <a class="dropdown-item <?= stristr($current_page, 'keuangan/laporan.php') ? 'active' : ''; ?>" 
                  href="<?= BASE_URL; ?>keuangan/laporan.php">
                 <i class="bi bi-tags me-2"></i>Laporan PPOB
-              </a>
-            </li>
-            <li><hr class="dropdown-divider"></li>
-            <li>
-              <a class="dropdown-item <?= stristr($current_page, 'index.php') ? 'active' : ''; ?>" 
-                 href="<?= BASE_URL; ?>keuangan/index.php">
-                <i class="bi bi-tag me-2"></i>====
               </a>
             </li>
           </ul>
@@ -170,7 +167,6 @@ $current_page = $_SERVER['REQUEST_URI'];
                 <i class="bi bi-tags me-2"></i>Kategori Barang
               </a>
             </li>
-        
             <li>
               <a class="dropdown-item <?= stristr($current_page, 'harga.php') ? 'active' : ''; ?>" 
                  href="<?= BASE_URL; ?>barang/harga.php">
@@ -192,7 +188,7 @@ $current_page = $_SERVER['REQUEST_URI'];
           </a>
           <ul class="dropdown-menu dropdown-menu-dark" aria-labelledby="navbarDropdownKasir">
             <li>
-              <a class="dropdown-item <?= stristr($current_page, '/kasir/') && !stristr($current_page, 'laporan.php') ? 'active' : ''; ?>" 
+              <a class="dropdown-item <?= stristr($current_page, '/kasir/') && !stristr($current_page, 'laporan') ? 'active' : ''; ?>" 
                  href="<?= BASE_URL; ?>kasir/">
                 <i class="bi bi-wallet2 me-2"></i>Kasir
               </a>
@@ -203,22 +199,43 @@ $current_page = $_SERVER['REQUEST_URI'];
                 <i class="bi bi-boxes me-2"></i>Stok
               </a>
             </li>
-            
             <li>
-              <a class="dropdown-item <?= stristr($current_page, 'kasir/laporan.php') ? 'active' : ''; ?>" 
+              <a class="dropdown-item <?= (stristr($current_page, 'kasir/laporan.php') && !stristr($current_page, 'laporan_kategori.php')) ? 'active' : ''; ?>" 
                  href="<?= BASE_URL; ?>kasir/laporan.php">
                 <i class="bi bi-file-earmark-text me-2"></i>Laporan
               </a>
             </li>
-
- 
             <li>
               <a class="dropdown-item <?= stristr($current_page, 'kasir/laporan_kategori.php') ? 'active' : ''; ?>" 
                  href="<?= BASE_URL; ?>kasir/laporan_kategori.php">
-                <i class="bi bi-file-earmark-text me-2"></i>Item terjual
+                <i class="bi bi-grid-3x3-gap me-2"></i>Laporan Per Kategori
               </a>
             </li>
           </ul>
+        </li>
+
+        <!-- Menu Khusus Admin: Pengelola User -->
+        <?php if (isset($_SESSION['role']) && $_SESSION['role'] === 'admin'): ?>
+          <li class="nav-item">
+            <a class="nav-link <?= stristr($current_page, 'users.php') ? 'active' : ''; ?>" 
+               href="<?= BASE_URL; ?>users.php">
+              <i class="bi bi-people-fill me-1"></i> User
+            </a>
+          </li>
+
+ <li class="nav-item">
+            <a class="nav-link <?= stristr($current_page, '/database/admindb.php') ? 'active' : ''; ?>" 
+               href="<?= BASE_URL; ?>/database/admindb.php">
+              <i class="bi bi-people-fill me-1"></i> database
+            </a>
+          </li>
+        <?php endif; ?>
+
+        <!-- Tombol Logout -->
+        <li class="nav-item ms-lg-2">
+          <a class="btn btn-sm btn-outline-danger" href="<?= BASE_URL; ?>logout.php" title="Keluar dari Sistem">
+            <i class="bi bi-box-arrow-right me-1"></i> Logout (<?= htmlspecialchars($_SESSION['username'] ?? 'User'); ?>)
+          </a>
         </li>
 
       </ul>

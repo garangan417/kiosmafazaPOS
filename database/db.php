@@ -1,6 +1,6 @@
 <?php
 // Path ke file database SQLite
-$dbPath = __DIR__ . '/kios.sqlite';
+$dbPath = __DIR__ . '/ppob.sqlite';
 
 try {
     // Membuka koneksi (dan otomatis membuat file jika belum ada)

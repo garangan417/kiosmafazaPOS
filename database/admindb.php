@@ -1,4 +1,12 @@
 <?php
+
+require_once __DIR__ . '/../config.php';
+require_once BASE_PATH . 'auth.php';
+
+// Pasang pengaman di sini
+//check_login();
+//check_role(['admin']);
+
 // 1. Auto-Scan File SQLite di Folder Saat Ini
 $targetFolder = __DIR__;
 $extensions = ['db', 'sqlite', 'sqlite3', 'db3'];
