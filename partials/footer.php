@@ -1,8 +1,10 @@
-<footer class="bg-white text-center text-lg-start mt-auto py-3 border-top">
+<footer class="bg-white text-center text-lg-start mt-auto py-3 fixed-bottom border-top">
   <div class="container text-center text-muted small">
     &copy; <?= date('Y'); ?> Mafaza App. All rights reserved.
   </div>
 </footer>
+
+// <script src="/assets/js/helper.js"></script>
 
 <script>
 // Auto-dismiss & interaktivitas untuk Global Toast Container
