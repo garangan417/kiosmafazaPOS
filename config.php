@@ -26,12 +26,30 @@ define('BASE_URL', $baseUrl);
 // ===================================================
 // 4. KONFIGURASI DATABASE MARIADB / MYSQL
 // ===================================================
-define('DB_HOST', 'localhost');
-define('DB_PORT', '3306');
-define('DB_USER', 'root');
-define('DB_PASS', '');               // Isi password MySQL kamu di sini
-define('DB_NAME', 'kiosmafaza_db');
+// 1. Pengaturan Database MariaDB
+define('DB_HOST', '127.0.0.1');     // atau 'localhost'
+define('DB_PORT', '3306');          // Port default MariaDB/MySQL
+define('DB_NAME', 'mafaza');   // Sesuaikan dengan nama database kamu
+define('DB_USER', 'mafaza');          // User database
+define('DB_PASS', '1234');              // Password database kamu
 
+// 2. Inisialisasi Koneksi PDO
+try {
+    $dsn = "mysql:host=" . DB_HOST . ";port=" . DB_PORT . ";dbname=" . DB_NAME . ";charset=utf8mb4";
+    
+    $options = [
+        PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
+        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+        PDO::ATTR_EMULATE_PREPARES   => false,
+    ];
+
+    // Variabel $pdo dibuat di scope global
+    $pdo = new PDO($dsn, DB_USER, DB_PASS, $options);
+
+} catch (PDOException $e) {
+    // Tampilkan pesan error jika koneksi gagal
+    die("Koneksi Database MariaDB Gagal: " . $e->getMessage());
+}
 /**
  * Helper Fungsi Pemisah Ribuan / Format Rupiah
  */

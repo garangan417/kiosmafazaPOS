@@ -1,19 +1,27 @@
 <?php
-// database2/query_harga.php
-
+// database/query_harga.php
 require_once __DIR__ . '/db_barang.php';
 
+/**
+ * Simpan atau Update Harga Barang di SQLite.
+ * Otomatis mengambil rujukan 'isi' dari barang_kemasan 
+ * dan menghitung harga_beli_pcs (modal ecer) = harga_beli / isi.
+ */
 function saveOrUpdateHarga(PDO $pdo, int $kemasanId, float $hargaBeli, float $hargaEcer, float $hargaGrosir = 0.0, int $minGrosir = 1): bool {
+    // 1. Ambil nilai rujukan 'isi' dari tabel barang_kemasan
     $stmtIsi = $pdo->prepare("SELECT COALESCE(isi, 1) FROM barang_kemasan WHERE id = ?");
     $stmtIsi->execute([$kemasanId]);
     $isi = floatval($stmtIsi->fetchColumn() ?: 1);
     
+    // Keamanan jika nilai isi 0 atau negatif
     if ($isi <= 0) {
         $isi = 1;
     }
 
+    // 2. Hitung Modal Ecer (harga_beli_pcs) secara otomatis
     $hargaBeliPcs = $hargaBeli / $isi;
 
+    // 3. Simpan atau Update data ke tabel harga_barang (UPSERT)
     $sql = "INSERT INTO harga_barang (
                 barang_kemasan_id, 
                 harga_beli, 
@@ -23,14 +31,14 @@ function saveOrUpdateHarga(PDO $pdo, int $kemasanId, float $hargaBeli, float $ha
                 min_qty_grosir, 
                 updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, NOW())
-            ON DUPLICATE KEY UPDATE
-                harga_beli = VALUES(harga_beli),
-                harga_beli_pcs = VALUES(harga_beli_pcs),
-                harga_jual_ecer = VALUES(harga_jual_ecer),
-                harga_jual_grosir = VALUES(harga_jual_grosir),
-                min_qty_grosir = VALUES(min_qty_grosir),
-                updated_at = NOW()";
+            VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(barang_kemasan_id) DO UPDATE SET
+                harga_beli = excluded.harga_beli,
+                harga_beli_pcs = excluded.harga_beli_pcs,
+                harga_jual_ecer = excluded.harga_jual_ecer,
+                harga_jual_grosir = excluded.harga_jual_grosir,
+                min_qty_grosir = excluded.min_qty_grosir,
+                updated_at = CURRENT_TIMESTAMP";
 
     $stmt = $pdo->prepare($sql);
     return $stmt->execute([
@@ -43,35 +51,26 @@ function saveOrUpdateHarga(PDO $pdo, int $kemasanId, float $hargaBeli, float $ha
     ]);
 }
 
-function getDaftarHargaLengkap(PDO $pdo, string $search = '', $kategoriId = ''): array {
+/**
+ * Ambil daftar harga lengkap beserta estimasi margin keuntungan (%)
+ */
+function getDaftarHargaLengkap(PDO $pdo, string $search = ''): array {
     $params = [];
-    $whereConditions = [];
-
-    // Filter Pencarian Teks
-    if (!empty($search)) {
-        $whereConditions[] = "(b.nama_barang LIKE ? 
-                               OR bk.nama_kemasan LIKE ? 
-                               OR k.nama_kategori LIKE ? 
-                               OR bk.id IN (SELECT barang_kemasan_id FROM barang_barcode WHERE barcode LIKE ?))";
-        $searchTerm = '%' . $search . '%';
-        $params = array_merge($params, [$searchTerm, $searchTerm, $searchTerm, $searchTerm]);
-    }
-
-    // Filter ID Kategori (jika dikirim dari backend)
-    if (!empty($kategoriId) && $kategoriId !== 'semua' && $kategoriId !== '0') {
-        $whereConditions[] = "b.kategori_id = ?";
-        $params[] = intval($kategoriId);
-    }
-
     $whereSql = "";
-    if (!empty($whereConditions)) {
-        $whereSql = " WHERE " . implode(" AND ", $whereConditions);
+
+    if (!empty($search)) {
+        $whereSql = " WHERE b.nama_barang LIKE ? 
+                       OR bk.nama_kemasan LIKE ? 
+                       OR k.nama_kategori LIKE ? 
+                       OR bk.id IN (SELECT barang_kemasan_id FROM barang_barcode WHERE barcode LIKE ?)";
+        $searchTerm = '%' . $search . '%';
+        $params = [$searchTerm, $searchTerm, $searchTerm, $searchTerm];
     }
 
     $sql = "SELECT 
                 bk.id AS kemasan_id,
                 b.id AS barang_id,
-                b.kategori_id, -- TAMBAHAN: Sangat penting untuk filter dropdown kategori di UI/JS
+                b.kategori_id AS kategori_id, -- TAMBAHAN: Dibutuhkan untuk filter dropdown kategori di UI
                 b.nama_barang,
                 k.nama_kategori,
                 bk.nama_kemasan,

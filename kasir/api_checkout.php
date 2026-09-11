@@ -30,8 +30,15 @@ $noFaktur = 'TRX-' . date('Ymd-His');
 $namaPelanggan = '';
 
 try {
+    // -------------------------------------------------------------
+    // OPREK 1: TRANSAKSI ADAPTIF (KOMPATIBEL SQLITE & MARIADB)
+    // -------------------------------------------------------------
     $pdoBarang->beginTransaction();
-    $pdo->beginTransaction();
+    
+    // Hanya buka transaksi kedua JIKA $pdo dan $pdoBarang adalah 2 objek berbeda (SQLite)
+    if (isset($pdo) && $pdo !== $pdoBarang && !$pdo->inTransaction()) {
+        $pdo->beginTransaction();
+    }
 
     $totalNominalPpob  = 0;
     $totalBarangFisik  = 0;
@@ -65,8 +72,7 @@ try {
         $rincianItemText[] = "{$namaBarang} ({$qty} {$satuan})";
     }
 
-    // A. SIMPAN KE TABEL PENJUALAN (HANYA UNTUK TRANSAKSI TUNAI / NON-UTANG)
-    // Jika UTANG, jangan masuk ke tabel penjualan dulu agar omzet tidak tembus!
+    // A. SIMPAN KE TABEL PENJUALAN
     if ($metodeBayar !== 'UTANG' && count($itemsBarangFisik) > 0) {
         $totalBersihBarang = $totalBarangFisik - $diskon;
         if ($totalBersihBarang < 0) $totalBersihBarang = 0;
@@ -120,7 +126,7 @@ try {
         }
     }
 
-    // B. POTONG STOK FISIK (TETAP BERJALAN WALAUPUN UTANG)
+    // B. POTONG STOK FISIK
     $stmtUpdateStok = $pdoBarang->prepare("UPDATE barang_kemasan SET stok = stok - ? WHERE id = ?");
     foreach ($items as $item) {
         $isJasa = !empty($item['is_jasa']) && (
@@ -200,8 +206,15 @@ try {
         }
     }
 
-    $pdoBarang->commit();
-    $pdo->commit();
+    // -------------------------------------------------------------
+    // OPREK 2: COMMIT ADAPTIF
+    // -------------------------------------------------------------
+    if ($pdoBarang->inTransaction()) {
+        $pdoBarang->commit();
+    }
+    if (isset($pdo) && $pdo !== $pdoBarang && $pdo->inTransaction()) {
+        $pdo->commit();
+    }
 
     echo json_encode([
         'status' => true,
@@ -211,12 +224,16 @@ try {
     ]);
 
 } catch (PDOException $e) {
-    if ($pdoBarang->inTransaction()) {
+    // -------------------------------------------------------------
+    // OPREK 3: ROLLBACK ADAPTIF
+    // -------------------------------------------------------------
+    if (isset($pdoBarang) && $pdoBarang->inTransaction()) {
         $pdoBarang->rollBack();
     }
-    if ($pdo->inTransaction()) {
+    if (isset($pdo) && $pdo !== $pdoBarang && $pdo->inTransaction()) {
         $pdo->rollBack();
     }
+    
     echo json_encode([
         'status' => false,
         'message' => 'Database error: ' . $e->getMessage()

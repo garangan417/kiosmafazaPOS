@@ -13,6 +13,6 @@ Aplikasi Point of Sales (Kasir), Stok Barang, dan Manajemen Utang untuk Kios Maf
 - **Frontend**: Bootstrap, HTMX
 - **Database**: SQLite (`database/`)
 
-## 📌 Catatan
+## 📌 Catatan kecil
 Database SQLite di-ignore demi keamanan data lokal.
 user login default : admin ,password : admin123

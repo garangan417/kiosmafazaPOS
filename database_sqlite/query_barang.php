@@ -1,6 +1,4 @@
 <?php
-// database2/query_barang.php
-
 require_once __DIR__ . '/db_barang.php';
 
 /**
@@ -33,7 +31,7 @@ function cariBarangByBarcode($pdo, $barcode) {
 function getDaftarBarangLengkap($pdo) {
     $sql = "SELECT 
                 b.id AS barang_id,
-                b.kategori_id,
+                b.kategori_id, -- TAMBAHAN: Dibutuhkan untuk filter dropdown kategori di UI
                 b.nama_barang,
                 k.nama_kategori,
                 bk.id AS kemasan_id,
@@ -41,7 +39,7 @@ function getDaftarBarangLengkap($pdo) {
                 bk.satuan,
                 bk.isi,
                 (
-                    SELECT GROUP_CONCAT(barcode SEPARATOR ', ') 
+                    SELECT GROUP_CONCAT(barcode, ', ') 
                     FROM barang_barcode 
                     WHERE barang_kemasan_id = bk.id
                 ) AS list_barcode

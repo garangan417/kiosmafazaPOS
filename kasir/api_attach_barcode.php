@@ -5,9 +5,11 @@ header('Content-Type: application/json');
 require_once __DIR__ . '/../config.php';
 require_once BASE_PATH . 'database/db_barang.php';
 
-$data = json_decode(file_get_contents('php_input'), true);
+// PERBAIKAN 1: Gunakan php://input
+$data = json_decode(file_get_contents('php://input'), true);
 
-$kemasanId = intval($data['barang_kemasan_id'] ?? 0);
+// PERBAIKAN 2: Antisipasi perbedaan nama key dari JS (barang_kemasan_id ATAU id_kemasan)
+$kemasanId = intval($data['barang_kemasan_id'] ?? $data['id_kemasan'] ?? 0);
 $barcode   = trim($data['barcode'] ?? '');
 
 if ($kemasanId <= 0 || empty($barcode)) {

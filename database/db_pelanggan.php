@@ -1,82 +1,67 @@
 <?php
-// database/db_pelanggan.php
+// database2/db_pelanggan.php
+
 require_once __DIR__ . '/../config.php';
 
-try {
-    $dbPath = BASE_PATH . 'database/pelanggan.sqlite';
-    $pdoPelanggan = new PDO("sqlite:" . $dbPath);
-    $pdoPelanggan->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-
-    // Aktifkan dukungan Foreign Key di SQLite
-    $pdoPelanggan->exec("PRAGMA foreign_keys = ON;");
-
-    // 1. Otomatis buat tabel pelanggan jika belum ada
-    $pdoPelanggan->exec("CREATE TABLE IF NOT EXISTS pelanggan (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        nama TEXT NOT NULL,
-        no_hp TEXT,
-        alamat TEXT,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )");
-
-    // 2. Otomatis buat tabel utang jika belum ada (langsung sertakan items_json)
-    $pdoPelanggan->exec("CREATE TABLE IF NOT EXISTS utang (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        pelanggan_id INTEGER NOT NULL,
-        tipe TEXT NOT NULL CHECK(tipe IN ('utang', 'bayar')),
-        nominal REAL NOT NULL DEFAULT 0,
-        keterangan TEXT,
-        items_json TEXT,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (pelanggan_id) REFERENCES pelanggan(id) ON DELETE CASCADE
-    )");
-
-    // 3. Auto-Migration Safe Guard: Cek & Tambah kolom items_json otomatis jika database lama sudah ada
-    $cols = $pdoPelanggan->query("PRAGMA table_info(utang)")->fetchAll(PDO::FETCH_ASSOC);
-    $hasItemsJson = false;
-    foreach ($cols as $col) {
-        if ($col['name'] === 'items_json') {
-            $hasItemsJson = true;
-            break;
-        }
-    }
-    if (!$hasItemsJson) {
-        $pdoPelanggan->exec("ALTER TABLE utang ADD COLUMN items_json TEXT");
-    }
-
-} catch (PDOException $e) {
-    die("Koneksi Database Pelanggan Gagal: " . $e->getMessage());
+if (!isset($pdo) || !($pdo instanceof PDO)) {
+    die("Error: Variabel \$pdo dari config.php tidak ditemukan.");
 }
 
-// ===================================================
-// HELPER PERHITUNGAN SESI UTANG & SISA UTANG
-// ===================================================
-if (!function_exists('hitungSisaUtangPelanggan')) {
-    function hitungSisaUtangPelanggan($pdoPelanggan, $pelanggan_id) {
-        // Ambil riwayat utang dari TERLAMA ke TERBARU
-        $stmt = $pdoPelanggan->prepare("SELECT tipe, nominal FROM utang WHERE pelanggan_id = ? ORDER BY created_at ASC, id ASC");
-        $stmt->execute([$pelanggan_id]);
-        $riwayat = $stmt->fetchAll(PDO::FETCH_ASSOC);
+try {
+    // 1. Buat tabel pelanggan jika belum ada
+    $pdo->exec("CREATE TABLE IF NOT EXISTS pelanggan (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        nama VARCHAR(150) NOT NULL,
+        no_hp VARCHAR(20),
+        alamat TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
 
-        $totalUtangSesi = 0;
-        $totalBayarSesi = 0;
+    // 2. Buat tabel utang jika belum ada
+    $pdo->exec("CREATE TABLE IF NOT EXISTS utang (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        pelanggan_id INT NOT NULL,
+        tipe ENUM('utang', 'bayar') NOT NULL,
+        nominal DECIMAL(15, 2) NOT NULL DEFAULT 0,
+        keterangan TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (pelanggan_id) REFERENCES pelanggan(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
 
-        foreach ($riwayat as $r) {
-            $nominal = floatval($r['nominal']);
-            
-            if ($r['tipe'] === 'utang') {
-                $totalUtangSesi += $nominal;
-            } else {
-                $totalBayarSesi += $nominal;
-            }
+    // 3. Auto-Migration: Cek dan tambahkan kolom items_json jika belum ada
+    $checkColumn = $pdo->query("SHOW COLUMNS FROM utang LIKE 'items_json'");
+    if ($checkColumn && $checkColumn->rowCount() === 0) {
+        $pdo->exec("ALTER TABLE utang ADD COLUMN items_json TEXT NULL AFTER keterangan");
+    }
 
-            // Jika lunas / lebih, reset sesi untuk transaksi berikutnya
-            if ($totalUtangSesi > 0 && $totalBayarSesi >= $totalUtangSesi) {
-                $totalUtangSesi = 0;
-                $totalBayarSesi = 0;
-            }
+    $pdoPelanggan = $pdo;
+
+} catch (PDOException $e) {
+    die("Koneksi Database Pelanggan MariaDB Gagal: " . $e->getMessage());
+}
+
+function hitungSisaUtangPelanggan($pdoPelanggan, $pelanggan_id) {
+    $stmt = $pdoPelanggan->prepare("SELECT tipe, nominal FROM utang WHERE pelanggan_id = ? ORDER BY created_at ASC, id ASC");
+    $stmt->execute([$pelanggan_id]);
+    $riwayat = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    $totalUtangSesi = 0;
+    $totalBayarSesi = 0;
+
+    foreach ($riwayat as $r) {
+        $nominal = floatval($r['nominal']);
+        
+        if ($r['tipe'] === 'utang') {
+            $totalUtangSesi += $nominal;
+        } else {
+            $totalBayarSesi += $nominal;
         }
 
-        return max(0, $totalUtangSesi - $totalBayarSesi);
+        if ($totalUtangSesi > 0 && $totalBayarSesi >= $totalUtangSesi) {
+            $totalUtangSesi = 0;
+            $totalBayarSesi = 0;
+        }
     }
+
+    return max(0, $totalUtangSesi - $totalBayarSesi);
 }
