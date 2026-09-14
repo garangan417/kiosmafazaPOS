@@ -108,7 +108,7 @@ $current_page = $_SERVER['REQUEST_URI'];
 
         <!-- Menu Home / Beranda -->
         <li class="nav-item">
-          <a class="nav-link <?= (stristr($current_page, 'index.php') || $current_page === BASE_URL || $current_page === BASE_URL . 'index.php') ? 'active' : ''; ?>" 
+          <a class="nav-link <?= (stristr($current_page, 'index.php') || $current_page === BASE_URL || $current_page === BASE_URL . '') ? 'active' : ''; ?>" 
              href="<?= BASE_URL; ?>">Home</a>
         </li>
 

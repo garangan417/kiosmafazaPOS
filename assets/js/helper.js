@@ -316,6 +316,12 @@ function showSearchDropdown(data) {
     let html = '';
 
     data.forEach((item, index) => {
+        // Gabungkan nama barang & nama kemasan jika belum digabung dari API
+        let namaTampil = item.nama_lengkap 
+            ? item.nama_lengkap 
+            : (item.nama_kemasan && !item.nama_barang.includes(`(${item.nama_kemasan})`)
+                ? `${item.nama_barang} (${item.nama_kemasan})`
+                : item.nama_barang);
 
         html += `
             <a href="#"
@@ -324,12 +330,11 @@ function showSearchDropdown(data) {
 
                 <div>
                     <strong class="d-block text-dark">
-                        ${escapeHtml(item.nama_barang)}
+                        ${escapeHtml(namaTampil)}
                     </strong>
 
                     <small class="text-muted">
-                        ${escapeHtml(item.nama_kemasan)}
-                        (${escapeHtml(item.satuan || '')})
+                        Satuan: ${escapeHtml(item.satuan || 'pcs')}
                     </small>
                 </div>
 
@@ -428,6 +433,13 @@ function addToCart(item) {
                 tiering.jenis_harga;
         }
 
+        // Penyesuaian Format Nama Barang (Surya 12 (BKS) / Surya 12 (BTG))
+        let namaLengkapBarang = item.nama_lengkap 
+            ? item.nama_lengkap 
+            : (item.nama_kemasan && !item.nama_barang.includes(`(${item.nama_kemasan})`)
+                ? `${item.nama_barang} (${item.nama_kemasan})`
+                : item.nama_barang);
+
         cart.push({
 
             tipe: isJasa
@@ -438,7 +450,7 @@ function addToCart(item) {
                 item.kemasan_id || null,
 
             nama_barang:
-                item.nama_barang,
+                isJasa ? item.nama_barang : namaLengkapBarang,
 
             nama_kemasan:
                 item.nama_kemasan || '',
@@ -531,7 +543,7 @@ function renderCart() {
                         </strong>
 
                         <small class="text-muted">
-                            ${escapeHtml(item.nama_kemasan)}
+                            Satuan: ${escapeHtml(item.satuan)}
                         </small>
                     </td>
 
@@ -984,13 +996,15 @@ function searchBarangTarget(q) {
             ) {
 
                 res.data.forEach(item => {
+                    let namaTarget = item.nama_lengkap 
+                        ? item.nama_lengkap 
+                        : (item.nama_kemasan && !item.nama_barang.includes(`(${item.nama_kemasan})`)
+                            ? `${item.nama_barang} (${item.nama_kemasan})`
+                            : item.nama_barang);
 
                     select.innerHTML += `
                         <option value="${item.kemasan_id}">
-                            ${escapeHtml(item.nama_barang)}
-                            -
-                            ${escapeHtml(item.nama_kemasan)}
-                            (Rp ${Math.round(
+                            ${escapeHtml(namaTarget)} (Rp ${Math.round(
                                 item.harga_ecer
                             ).toLocaleString('id-ID')})
                         </option>
@@ -1402,10 +1416,6 @@ function prosesCheckout() {
                                         item.nama_barang
                                     )}
                                 </strong>
-
-                                (${escapeHtml(
-                                    item.nama_kemasan
-                                )})
                             </td>
                         </tr>
 
