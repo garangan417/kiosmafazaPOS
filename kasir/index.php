@@ -53,7 +53,7 @@ require_once BASE_PATH . 'partials/header.php';
             <div class="d-flex flex-wrap gap-2">
               <?php foreach ($barangFavorit as $fav): ?>
                 <button type="button" class="btn btn-outline-primary btn-sm rounded-pill" onclick='addToCart(<?= json_encode($fav); ?>)'>
-                  + <?= htmlspecialchars($fav['nama_barang']); ?> (<?= htmlspecialchars($fav['nama_kemasan']); ?>)
+                  + <?= htmlspecialchars($fav['nama_barang']); ?> (<?= htmlspecialchars($fav['satuan']); ?>)
                 </button>
               <?php endforeach; ?>
             </div>
@@ -90,10 +90,10 @@ require_once BASE_PATH . 'partials/header.php';
 
     <!-- KOLOM KANAN: RINGKASAN & PEMBAYARAN -->
     <div class="col-lg-5">
-      <div class="card border-0 shadow-sm bg-dark text-white p-3 mb-3 text-end">
+  <!--     <div class="card border-0 shadow-sm bg-dark text-white p-3 mb-3 text-end">
         <small class="text-uppercase fw-semibold opacity-75">Total Pembayaran</small>
         <h1 class="display-5 fw-bold font-monospace text-warning mb-0" id="displayTotal">Rp 0</h1>
-      </div>
+      </div>  -->
 
       <div class="card border-0 shadow-sm">
         <div class="card-body p-3">

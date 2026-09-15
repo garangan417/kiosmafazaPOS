@@ -316,12 +316,8 @@ function showSearchDropdown(data) {
     let html = '';
 
     data.forEach((item, index) => {
-        // Gabungkan nama barang & nama kemasan jika belum digabung dari API
-        let namaTampil = item.nama_lengkap 
-            ? item.nama_lengkap 
-            : (item.nama_kemasan && !item.nama_barang.includes(`(${item.nama_kemasan})`)
-                ? `${item.nama_barang} (${item.nama_kemasan})`
-                : item.nama_barang);
+        // Ambil satuan jika ada, jika tidak ada baru gunakan nama_kemasan
+        let teksSatuan = item.satuan ? item.satuan : item.nama_kemasan;
 
         html += `
             <a href="#"
@@ -330,12 +326,8 @@ function showSearchDropdown(data) {
 
                 <div>
                     <strong class="d-block text-dark">
-                        ${escapeHtml(namaTampil)}
+                        ${escapeHtml(item.nama_barang)} (${escapeHtml(teksSatuan)})
                     </strong>
-
-                    <small class="text-muted">
-                        Satuan: ${escapeHtml(item.satuan || 'pcs')}
-                    </small>
                 </div>
 
                 <span class="badge bg-success font-monospace fs-6">
@@ -436,8 +428,8 @@ function addToCart(item) {
         // Penyesuaian Format Nama Barang (Surya 12 (BKS) / Surya 12 (BTG))
         let namaLengkapBarang = item.nama_lengkap 
             ? item.nama_lengkap 
-            : (item.nama_kemasan && !item.nama_barang.includes(`(${item.nama_kemasan})`)
-                ? `${item.nama_barang} (${item.nama_kemasan})`
+            : (item.satuan && !item.nama_barang.includes(`(${item.satuan})`)
+                ? `${item.nama_barang} (${item.satuan})`
                 : item.nama_barang);
 
         cart.push({
@@ -537,15 +529,11 @@ function renderCart() {
             tbody.innerHTML += `
                 <tr>
 
-                    <td>
-                        <strong class="d-block text-dark">
-                            ${escapeHtml(item.nama_barang)}
-                        </strong>
-
-                        <small class="text-muted">
-                            Satuan: ${escapeHtml(item.satuan)}
-                        </small>
-                    </td>
+         <td>
+    <strong class="d-block text-dark">
+        ${escapeHtml(item.nama_barang)}
+    </strong>
+</td>         
 
                     <td class="font-monospace">
                         Rp ${Math.round(
@@ -820,15 +808,10 @@ function loadFavoritList(q) {
                             </td>
 
                             <td>
-                                <span class="badge bg-light text-dark border">
-                                    ${escapeHtml(
-                                        item.nama_kemasan
-                                    )}
-                                    (${escapeHtml(
-                                        item.satuan || ''
-                                    )})
-                                </span>
-                            </td>
+    <span class="badge bg-light text-dark border">
+        ${escapeHtml(item.satuan && item.satuan.trim() !== '' ? item.satuan : item.nama_kemasan)}
+    </span>
+</td>
 
                             <td class="text-center">
 
