@@ -68,7 +68,7 @@
                           hx-target="#container-modal-detail"
                           hx-swap="innerHTML"
                           hx-on::after-request="if(event.detail.successful) { new bootstrap.Modal(document.getElementById('modalDetailUtang')).show(); }"
-                          title="Detail Riwayat Utang">
+                          title="Bayar Utang">
                     <i class="bi bi-receipt"></i>
                   </button>
 

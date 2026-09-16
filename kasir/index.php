@@ -47,7 +47,7 @@ require_once BASE_PATH . 'partials/header.php';
           <h6 class="fw-bold mb-0"><i class="bi bi-cart3 text-primary me-2"></i>Keranjang Belanja</h6>
           <button class="btn btn-sm btn-outline-danger" onclick="clearCart()"><i class="bi bi-trash me-1"></i> Kosongkan</button>
         </div>
-        <div class="table-responsive" style="min-height: 250px; max-height: 350px; overflow-y: auto;">
+        <div class="table-responsive" style="min-height: 250px; max-height: 330px; overflow-y: auto;">
           <table class="table table-hover align-middle mb-0" id="cartTable">
             <thead class="table-light sticky-top">
               <tr>
@@ -72,46 +72,10 @@ require_once BASE_PATH . 'partials/header.php';
         <small class="text-uppercase fw-semibold opacity-75">Total Pembayaran</small>
         <h1 class="display-5 fw-bold font-monospace text-warning mb-0" id="displayTotal">Rp 0</h1>
       </div>  -->
-
-      <div class="card border-0 shadow-sm">
-        <div class="card-body p-3">
-          <div class="mb-3">
-            <label class="form-label fw-bold small">Metode Pembayaran</label>
-            <select id="metodeBayar" class="form-select" onchange="toggleFormUtang()">
-              <option value="TUNAI" selected>TUNAI</option>
-              <option value="QRIS">QRIS</option>
-              <option value="UTANG">UTANG / BON</option>
-            </select>
-          </div>
-
-          <!-- INPUT KHUSUS PELANGGAN (Hanya tampil jika Metode = UTANG) -->
-          <div class="mb-3 p-2 border border-warning rounded bg-warning-subtle" id="boxPelangganUtang" style="display: none;">
-            <label class="form-label fw-bold small text-dark"><i class="bi bi-person-fill me-1"></i> Pilih Pelanggan (Utang/Bon)</label>
-            <select id="selectPelanggan" class="form-select form-select-sm">
-              <option value="">-- Pilih Pelanggan --</option>
-            </select>
-          </div>
-
-          <div class="mb-3">
-            <label class="form-label fw-bold small">Uang Diterima (Rp)</label>
-            <!-- Diubah menjadi type="text" dan dipasang pemisah ribuan live -->
-            <input type="text" id="inputBayar" class="form-control form-control-lg font-monospace fw-bold" placeholder="0" oninput="formatInputRupiahJS(this); hitungKembalian()">
-            <div class="d-flex gap-2 mt-2">
-              <button class="btn btn-sm btn-outline-secondary flex-fill" onclick="setNominalBayar('PAS')">Uang Pas</button>
-              <button class="btn btn-sm btn-outline-secondary flex-fill" onclick="setNominalBayar(50000)">50rb</button>
-              <button class="btn btn-sm btn-outline-secondary flex-fill" onclick="setNominalBayar(100000)">100rb</button>
-            </div>
-          </div>
-
-          <div class="d-flex justify-content-between align-items-center mb-3 p-2 bg-light rounded font-monospace">
-            <span class="fw-bold">Kembalian:</span>
-            <span class="fw-bold fs-5 text-success" id="displayKembalian">Rp 0</span>
-          </div>
-
- <!-- BARANG FAVORIT / QUICK BUTTONS -->
+<!-- BARANG FAVORIT / QUICK BUTTONS -->
 <div class="card border-0 shadow-sm mb-3">
   <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center">
-    <small class="fw-bold text-muted"><i class="bi bi-star-fill text-warning me-1"></i> BARANG CEPAT / FAVORIT</small>
+   
   </div>
   
   <div class="card-body p-0">
@@ -150,6 +114,45 @@ require_once BASE_PATH . 'partials/header.php';
     <?php endif; ?>
   </div>
 </div>
+
+
+  <!-- BATAS ATAS -->
+      <div class="card border-0 shadow-sm">
+        <div class="card-body p-3">
+          <div class="mb-3">
+            <label class="form-label fw-bold small">Metode Pembayaran</label>
+            <select id="metodeBayar" class="form-select" onchange="toggleFormUtang()">
+              <option value="TUNAI" selected>TUNAI</option>
+              <option value="QRIS">QRIS</option>
+              <option value="UTANG">UTANG / BON</option>
+            </select>
+          </div>
+
+          <!-- INPUT KHUSUS PELANGGAN (Hanya tampil jika Metode = UTANG) -->
+          <div class="mb-3 p-2 border border-warning rounded bg-warning-subtle" id="boxPelangganUtang" style="display: none;">
+            <label class="form-label fw-bold small text-dark"><i class="bi bi-person-fill me-1"></i> Pilih Pelanggan (Utang/Bon)</label>
+            <select id="selectPelanggan" class="form-select form-select-sm">
+              <option value="">-- Pilih Pelanggan --</option>
+            </select>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label fw-bold small">Uang Diterima (Rp)</label>
+            <!-- Diubah menjadi type="text" dan dipasang pemisah ribuan live -->
+            <input type="text" id="inputBayar" class="form-control form-control-lg font-monospace fw-bold" placeholder="0" oninput="formatInputRupiahJS(this); hitungKembalian()">
+            <div class="d-flex gap-2 mt-2">
+              <button class="btn btn-sm btn-outline-secondary flex-fill" onclick="setNominalBayar('PAS')">Uang Pas</button>
+              <button class="btn btn-sm btn-outline-secondary flex-fill" onclick="setNominalBayar(50000)">50rb</button>
+              <button class="btn btn-sm btn-outline-secondary flex-fill" onclick="setNominalBayar(100000)">100rb</button>
+            </div>
+          </div>
+
+          <div class="d-flex justify-content-between align-items-center mb-3 p-2 bg-light rounded font-monospace">
+            <span class="fw-bold">Kembalian:</span>
+            <span class="fw-bold fs-5 text-success" id="displayKembalian">Rp 0</span>
+          </div>
+
+ 
 
         <!-- BATAS-->
         </div>
