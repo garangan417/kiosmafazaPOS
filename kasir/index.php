@@ -39,29 +39,7 @@ require_once BASE_PATH . 'partials/header.php';
         </div>
       </div>
 
-      <!-- BARANG FAVORIT / QUICK BUTTONS -->
-      <div class="card border-0 shadow-sm mb-3">
-        <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center">
-          <small class="fw-bold text-muted"><i class="bi bi-star-fill text-warning me-1"></i> BARANG CEPAT / FAVORIT</small>
-          <!-- TOMBOL UNTUK MEMBUKA PENGELOLA FAVORIT -->
-         <!--    <button type="button" class="btn btn-xs btn-outline-warning text-dark fw-bold px-2 py-1" onclick="openKelolaFavorit()" style="font-size: 0.78rem;">
-            <i class="bi bi-gear-fill me-1"></i> Kelola Favorit
-          </button>  -->
-        </div>
-        <div class="card-body p-2">
-          <?php if (!empty($barangFavorit)): ?>
-            <div class="d-flex flex-wrap gap-2">
-              <?php foreach ($barangFavorit as $fav): ?>
-                <button type="button" class="btn btn-outline-primary btn-sm rounded-pill" onclick='addToCart(<?= json_encode($fav); ?>)'>
-                  + <?= htmlspecialchars($fav['nama_barang']); ?> (<?= htmlspecialchars($fav['satuan']); ?>)
-                </button>
-              <?php endforeach; ?>
-            </div>
-          <?php else: ?>
-            <small class="text-muted italic d-block text-center py-1">Belum ada barang favorit. Klik <strong>Kelola Favorit</strong> untuk menambahkan.</small>
-          <?php endif; ?>
-        </div>
-      </div>
+ 
 
       <!-- TABEL KERANJANG BELANJA -->
       <div class="card border-0 shadow-sm">
@@ -69,7 +47,7 @@ require_once BASE_PATH . 'partials/header.php';
           <h6 class="fw-bold mb-0"><i class="bi bi-cart3 text-primary me-2"></i>Keranjang Belanja</h6>
           <button class="btn btn-sm btn-outline-danger" onclick="clearCart()"><i class="bi bi-trash me-1"></i> Kosongkan</button>
         </div>
-        <div class="table-responsive" style="min-height: 300px; max-height: 450px; overflow-y: auto;">
+        <div class="table-responsive" style="min-height: 250px; max-height: 350px; overflow-y: auto;">
           <table class="table table-hover align-middle mb-0" id="cartTable">
             <thead class="table-light sticky-top">
               <tr>
@@ -130,9 +108,50 @@ require_once BASE_PATH . 'partials/header.php';
             <span class="fw-bold fs-5 text-success" id="displayKembalian">Rp 0</span>
           </div>
 
-           <!--   <button id="btnCheckout" class="btn btn-success btn-lg w-100 fw-bold" onclick="prosesCheckout()" disabled>
-            <i class="bi bi-printer me-2"></i> SIMPAN & PROSES
-          </button> -->
+ <!-- BARANG FAVORIT / QUICK BUTTONS -->
+<div class="card border-0 shadow-sm mb-3">
+  <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center">
+    <small class="fw-bold text-muted"><i class="bi bi-star-fill text-warning me-1"></i> BARANG CEPAT / FAVORIT</small>
+  </div>
+  
+  <div class="card-body p-0">
+    <?php if (!empty($barangFavorit)): ?>
+      <!-- Container Scroll Vertikal (Maksimal 200px / sesuaikan kebutuhan) -->
+      <div style="max-height: 200px; overflow-y: auto;">
+        <table class="table table-hover align-middle mb-0" style="font-size: 0.875rem;">
+          <tbody class="border-top-0">
+            <?php foreach ($barangFavorit as $fav): ?>
+              <tr style="cursor: pointer;" onclick='addToCart(<?= json_encode($fav); ?>)'>
+                <td class="ps-3 py-2">
+                  <strong class="text-dark d-block">
+                    <?= htmlspecialchars($fav['nama_barang']); ?>
+                    <?php if (!empty($fav['satuan'])): ?>
+                      <span class="text-muted fw-normal">(<?= htmlspecialchars($fav['satuan']); ?>)</span>
+                    <?php endif; ?>
+                  </strong>
+                </td>
+                <td class="text-end text-primary font-monospace fw-bold py-2">
+                  Rp <?= number_format($fav['harga_jual'] ?? 0, 0, ',', '.'); ?>
+                </td>
+                <td class="text-end pe-3 py-2" style="width: 40px;">
+                  <button type="button" class="btn btn-xs btn-primary rounded-circle p-0" style="width: 24px; height: 24px; line-height: 1;">
+                    <i class="bi bi-plus"></i>
+                  </button>
+                </td>
+              </tr>
+            <?php endforeach; ?>
+          </tbody>
+        </table>
+      </div>
+    <?php else: ?>
+      <small class="text-muted italic d-block text-center py-2">
+        Belum ada barang favorit. Klik <strong>Kelola Favorit</strong> untuk menambahkan.
+      </small>
+    <?php endif; ?>
+  </div>
+</div>
+
+        <!-- BATAS-->
         </div>
       </div>
     </div>

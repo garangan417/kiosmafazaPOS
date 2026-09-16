@@ -108,7 +108,7 @@ require_once BASE_PATH . 'partials/header.php';
         <!-- Judul -->
         <div class="col-md-5">
           <h5 class="card-title mb-0 fw-bold text-dark"><i class="bi bi-tags-fill me-2 text-primary"></i>Kelola Harga Barang</h5>
-          <small class="text-muted">Atur harga beli modal dan harga jual ecer/grosir.</small>
+          
         </div>
 
         <!-- Form Filter Kategori & Pencarian Nama / Barcode -->

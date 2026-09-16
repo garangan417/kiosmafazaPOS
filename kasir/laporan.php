@@ -8,7 +8,7 @@ require_once BASE_PATH . 'database/db_barang.php';
 
 // Filter Tanggal (Default: Hari Ini)
 $tglMulai   = $_GET['tgl_mulai'] ?? date('Y-m-d');
-$tglSelesai = $_GET['tgl_selesai'] ?? date('Y-m-t');
+$tglSelesai = $_GET['tgl_selesai'] ?? date('Y-m-d');
 
 try {
     // 1. Total Summary (Omzet, Modal, & Laba)
@@ -31,30 +31,7 @@ try {
     $stmtSum->execute([$tglMulai, $tglSelesai]);
     $summary = $stmtSum->fetch(PDO::FETCH_ASSOC);
 
-    // 2. BREAKDOWN PER METODE PEMBAYARAN (TUNAI VS QRIS VS UTANG)
-    $sqlMetode = "SELECT 
-                    UPPER(metode_bayar) AS metode,
-                    COUNT(id) AS total_strik,
-                    COALESCE(SUM(total_bersih), 0) AS total_nominal
-                  FROM penjualan
-                  WHERE DATE(tanggal) BETWEEN ? AND ?
-                  GROUP BY UPPER(metode_bayar)";
-    $stmtMetode = $pdoBarang->prepare($sqlMetode);
-    $stmtMetode->execute([$tglMulai, $tglSelesai]);
-    $rawMetode = $stmtMetode->fetchAll(PDO::FETCH_ASSOC);
-
-    // Inisialisasi default agar key tidak undefined
-    // PERBAIKAN: Mengubah 'TRANSFER' menjadi 'QRIS' agar sesuai dengan tampilan HTML
-    $rekapMetode = [
-        'TUNAI' => 0,
-        'QRIS'  => 0,
-        'UTANG' => 0
-    ];
-    foreach ($rawMetode as $m) {
-        $rekapMetode[$m['metode']] = floatval($m['total_nominal']);
-    }
-
-    // 3. Daftar Transaksi Penjualan + Keuntungan per Transaksi
+    // 2. Daftar Transaksi Penjualan + Keuntungan per Transaksi
     $sqlList = "SELECT 
                     p.*,
                     (SELECT COUNT(id) FROM penjualan_detail WHERE penjualan_id = p.id) AS item_count,
@@ -83,7 +60,7 @@ require_once BASE_PATH . 'partials/header.php';
   <div class="row align-items-center mb-4">
     <div class="col-md-6">
       <h4 class="fw-bold mb-1"><i class="bi bi-journal-text text-primary me-2"></i>Laporan Penjualan & Keuntungan</h4>
-      <p class="text-muted small mb-0">Rekap omzet, rincian pembayaran kas, dan estimasi keuntungan bersih (laba).</p>
+      <p class="text-muted small mb-0">Rekap omzet, total modal, dan estimasi keuntungan bersih (laba).</p>
     </div>
     <div class="col-md-6">
       <form method="GET" class="row g-2 justify-content-md-end">
@@ -102,15 +79,15 @@ require_once BASE_PATH . 'partials/header.php';
     </div>
   </div>
 
-  <!-- CARD SUMMARY STATISTIK KEUANGAN KAS -->
-  <div class="row g-3 mb-3">
+  <!-- CARD SUMMARY STATISTIK DENGAN KEUNTUNGAN -->
+  <div class="row g-3 mb-4">
     
-    <!-- CARD 1: OMZET TOTAL -->
+    <!-- CARD 1: OMZET -->
     <div class="col-md-3">
       <div class="card border-0 shadow-sm bg-primary text-white">
         <div class="card-body p-3">
-          <small class="text-uppercase fw-semibold opacity-75">Total Omzet Penjualan</small>
-          <h3 class="fw-bold mb-0 font-monospace">Rp <?= number_format($summary['total_omzet'] ?? 0, 0, ',', '.'); ?></h3>
+          <small class="text-uppercase fw-semibold opacity-75">Total Omzet (Kotor)</small>
+          <h3 class="fw-bold mb-0 font-monospace">Rp <?= number_format($summary['total_omzet'], 0, ',', '.'); ?></h3>
         </div>
       </div>
     </div>
@@ -120,7 +97,7 @@ require_once BASE_PATH . 'partials/header.php';
       <div class="card border-0 shadow-sm bg-secondary text-white">
         <div class="card-body p-3">
           <small class="text-uppercase fw-semibold opacity-75">Total Modal (HPP)</small>
-          <h3 class="fw-bold mb-0 font-monospace">Rp <?= number_format($summary['total_modal'] ?? 0, 0, ',', '.'); ?></h3>
+          <h3 class="fw-bold mb-0 font-monospace">Rp <?= number_format($summary['total_modal'], 0, ',', '.'); ?></h3>
         </div>
       </div>
     </div>
@@ -130,8 +107,8 @@ require_once BASE_PATH . 'partials/header.php';
       <div class="card border-0 shadow-sm bg-success text-white">
         <div class="card-body p-3">
           <small class="text-uppercase fw-semibold opacity-75"><i class="bi bi-cash-stack me-1"></i>Keuntungan (Laba)</small>
-          <h3 class="fw-bold mb-0 font-monospace <?= ($summary['total_keuntungan'] ?? 0) >= 0 ? 'text-warning' : 'text-danger'; ?>">
-            Rp <?= number_format($summary['total_keuntungan'] ?? 0, 0, ',', '.'); ?>
+          <h3 class="fw-bold mb-0 font-monospace <?= $summary['total_keuntungan'] >= 0 ? 'text-warning' : 'text-danger'; ?>">
+            Rp <?= number_format($summary['total_keuntungan'], 0, ',', '.'); ?>
           </h3>
         </div>
       </div>
@@ -142,50 +119,11 @@ require_once BASE_PATH . 'partials/header.php';
       <div class="card border-0 shadow-sm bg-dark text-white">
         <div class="card-body p-3">
           <small class="text-uppercase fw-semibold opacity-75">Total Struk</small>
-          <h3 class="fw-bold mb-0 font-monospace"><?= number_format($summary['total_transaksi'] ?? 0); ?> <span class="fs-6 fw-normal">Transaksi</span></h3>
+          <h3 class="fw-bold mb-0 font-monospace"><?= number_format($summary['total_transaksi']); ?> <span class="fs-6 fw-normal">Transaksi</span></h3>
         </div>
       </div>
     </div>
 
-  </div>
-
-  <!-- RINCIAN SALDO MASUK PER METODE BAYAR (TUNAI VS QRIS VS UTANG) -->
-  <div class="row g-3 mb-4">
-    <div class="col-md-4">
-      <div class="card border-start border-4 border-success shadow-sm">
-        <div class="card-body py-2 px-3 d-flex justify-content-between align-items-center">
-          <div>
-            <small class="text-muted fw-bold text-uppercase d-block"><i class="bi bi-wallet2 text-success me-1"></i> Uang Tunai (Laci Kasir)</small>
-            <h5 class="fw-bold mb-0 text-success font-monospace">Rp <?= number_format($rekapMetode['TUNAI'] ?? 0, 0, ',', '.'); ?></h5>
-          </div>
-          <span class="badge bg-success-subtle text-success border border-success">TUNAI</span>
-        </div>
-      </div>
-    </div>
-
-    <div class="col-md-4">
-      <div class="card border-start border-4 border-primary shadow-sm">
-        <div class="card-body py-2 px-3 d-flex justify-content-between align-items-center">
-          <div>
-            <small class="text-muted fw-bold text-uppercase d-block"><i class="bi bi-qr-code-scan text-primary me-1"></i> QRIS</small>
-            <h5 class="fw-bold mb-0 text-primary font-monospace">Rp <?= number_format($rekapMetode['QRIS'] ?? 0, 0, ',', '.'); ?></h5>
-          </div>
-          <span class="badge bg-primary-subtle text-primary border border-primary">QRIS</span>
-        </div>
-      </div>
-    </div>
-
-    <div class="col-md-4">
-      <div class="card border-start border-4 border-danger shadow-sm">
-        <div class="card-body py-2 px-3 d-flex justify-content-between align-items-center">
-          <div>
-            <small class="text-muted fw-bold text-uppercase d-block"><i class="bi bi-journal-x text-danger me-1"></i> Piutang / Belum Lunas</small>
-            <h5 class="fw-bold mb-0 text-danger font-monospace">Rp <?= number_format($rekapMetode['UTANG'] ?? 0, 0, ',', '.'); ?></h5>
-          </div>
-          <span class="badge bg-danger-subtle text-danger border border-danger">UTANG</span>
-        </div>
-      </div>
-    </div>
   </div>
 
   <!-- TABEL RIWAYAT TRANSAKSI -->
@@ -217,13 +155,6 @@ require_once BASE_PATH . 'partials/header.php';
             </tr>
           <?php else: ?>
             <?php foreach ($transaksiList as $row): ?>
-              <?php 
-                $metode = strtoupper($row['metode_bayar'] ?? 'TUNAI');
-                $badgeClass = 'bg-secondary';
-                if ($metode === 'TUNAI') $badgeClass = 'bg-success';
-                elseif ($metode === 'QRIS') $badgeClass = 'bg-primary';
-                elseif ($metode === 'UTANG') $badgeClass = 'bg-danger';
-              ?>
               <tr>
                 <td>
                   <strong class="text-dark d-block"><?= htmlspecialchars($row['no_faktur']); ?></strong>
@@ -245,7 +176,7 @@ require_once BASE_PATH . 'partials/header.php';
                   Rp <?= number_format($row['kembalian'], 0, ',', '.'); ?>
                 </td>
                 <td class="text-center">
-                  <span class="badge <?= $badgeClass; ?>"><?= htmlspecialchars($metode); ?></span>
+                  <span class="badge bg-info text-dark"><?= htmlspecialchars($row['metode_bayar']); ?></span>
                 </td>
                 <td class="text-center">
                   <button type="button" class="btn btn-sm btn-outline-primary" onclick="lihatDetailStruk(<?= $row['id']; ?>)">
@@ -313,13 +244,11 @@ function lihatDetailStruk(id) {
         });
 
         let totalUntungStruk = parseFloat(res.header.total_bersih) - totalModalStruk;
-        let metodeBayar = (res.header.metode_bayar || 'TUNAI').toUpperCase();
 
         body.innerHTML = `
           <div class="text-center mb-3 border-bottom pb-2">
             <h5 class="fw-bold mb-0">KIOS MAFAZA</h5>
             <small class="text-muted d-block">${res.header.tanggal}</small>
-            <span class="badge ${metodeBayar === 'QRIS' ? 'bg-primary' : (metodeBayar === 'UTANG' ? 'bg-danger' : 'bg-success')} mt-1">${metodeBayar}</span>
           </div>
           <table class="table table-sm align-middle mb-3">
             <thead>
@@ -346,7 +275,7 @@ function lihatDetailStruk(id) {
             </div>
             <hr class="my-1">
             <div class="d-flex justify-content-between mb-1">
-              <span>Bayar (${metodeBayar}):</span>
+              <span>Bayar:</span>
               <span>Rp ${Math.round(res.header.bayar).toLocaleString('id-ID')}</span>
             </div>
             <div class="d-flex justify-content-between text-primary">
