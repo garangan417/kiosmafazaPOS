@@ -304,13 +304,7 @@ require_once BASE_PATH . 'partials/header.php';
     </div>
   </div>
 
-  <!-- SPINNER INDICATOR -->
-  <div id="loading-spinner" class="htmx-indicator text-center py-5">
-    <div class="spinner-border text-primary" role="status">
-      <span class="visually-hidden">Memuat data...</span>
-    </div>
-    <div class="text-muted small mt-2">Sedang menghitung rekapitulasi kategori & item...</div>
-  </div>
+
 
   <!-- KONTAINER UTAMA HASIL DATA -->
   <div id="laporan-kategori-container">

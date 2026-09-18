@@ -35,7 +35,7 @@ require_once BASE_PATH . 'partials/header.php';
             <button class="btn btn-outline-secondary" type="button" onclick="clearScan()"><i class="bi bi-x-lg"></i></button>
           </div>
           <!-- Dropdown Autocomplete Hasil Pencarian Nama -->
-          <div id="searchResult" class="list-group position-absolute shadow w-100 mt-1" style="z-index: 1050; display:none;"></div>
+<div id="searchResult" class="list-group position-absolute shadow w-100 mt-1" style="z-index: 1050; display:none; max-height: 420px; overflow-y: auto;"></div>
         </div>
       </div>
 
@@ -142,6 +142,7 @@ require_once BASE_PATH . 'partials/header.php';
             <input type="text" id="inputBayar" class="form-control form-control-lg font-monospace fw-bold" placeholder="0" oninput="formatInputRupiahJS(this); hitungKembalian()">
             <div class="d-flex gap-2 mt-2">
               <button class="btn btn-sm btn-outline-secondary flex-fill" onclick="setNominalBayar('PAS')">Uang Pas</button>
+             <button class="btn btn-sm btn-outline-secondary flex-fill" onclick="setNominalBayar(20000)">20rb</button>
               <button class="btn btn-sm btn-outline-secondary flex-fill" onclick="setNominalBayar(50000)">50rb</button>
               <button class="btn btn-sm btn-outline-secondary flex-fill" onclick="setNominalBayar(100000)">100rb</button>
             </div>

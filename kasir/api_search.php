@@ -39,7 +39,7 @@ try {
                OR b.nama_barang LIKE ?
                OR bk.nama_kemasan LIKE ?
             ORDER BY b.nama_barang ASC, bk.isi ASC
-            LIMIT 15";
+            LIMIT 50";
 
     $searchTerm = '%' . $q . '%';
     $stmt = $pdoBarang->prepare($sql);

@@ -86,7 +86,7 @@ $current_page = $_SERVER['REQUEST_URI'];
      style="z-index: 9999; pointer-events: none; max-width: 400px; width: 100%;">
 </div>
 
-<header class="navbar navbar-expand-lg navbar-dark bg-dark shadow-sm sticky-top">
+<header class="navbar navbar-expand-lg navbar-dark bg-secondary shadow-sm sticky-top">
   <div class="container">
     <a class="navbar-brand fw-bold" href="<?= BASE_URL; ?>">Mafaza App</a>
 
