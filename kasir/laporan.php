@@ -1,5 +1,5 @@
 <?php
-// kasir/laporan.php
+// kasir/laporantes.php
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
 
@@ -10,14 +10,19 @@ require_once BASE_PATH . 'database/db_barang.php';
 $tglMulai   =$_GET['tgl_mulai'] ?? date('Y-m-d');
 $tglSelesai =$_GET['tgl_selesai'] ?? date('Y-m-d');
 
+// Parameter Paginasi Tunggal
+$limit = 20; // Jumlah transaksi per halaman
+$page  = (isset($_GET['page']) && (int)$_GET['page'] > 0) ? (int)$_GET['page'] : 1;
+$offset = ($page - 1) *$limit;
+
 try {
-    // 1. Total Summary (Omzet, Modal, Laba Net Setelah Dipotong Retur)
+    // 1. QUERY RINGKASAN UTAMA (TUNAI, QRIS, LABA, TOTAL TX)
     $sqlSum = "SELECT 
                     COUNT(DISTINCT p.id) AS total_transaksi,
-                    COALESCE(SUM(p.total_bersih), 0) - COALESCE(r.total_retur_nominal, 0) AS total_omzet,
-                    COALESCE(SUM(det.total_modal_transaksi), 0) - COALESCE(r.total_retur_modal, 0) AS total_modal,
+                    COALESCE(SUM(CASE WHEN UPPER(p.metode_bayar) = 'TUNAI' THEN p.total_bersih ELSE 0 END), 0) - COALESCE(r.retur_tunai, 0) AS total_tunai,
+                    COALESCE(SUM(CASE WHEN UPPER(p.metode_bayar) = 'QRIS' THEN p.total_bersih ELSE 0 END), 0) - COALESCE(r.retur_qris, 0) AS total_qris,
                     (COALESCE(SUM(p.total_bersih), 0) - COALESCE(r.total_retur_nominal, 0)) - 
-                    (COALESCE(SUM(det.total_modal_transaksi), 0) - COALESCE(r.total_retur_modal, 0)) AS total_keuntungan
+                    (COALESCE(SUM(det.total_modal_transaksi), 0) - COALESCE(r.total_retur_modal, 0)) AS total_laba
                FROM penjualan p
                LEFT JOIN (
                    SELECT 
@@ -29,7 +34,9 @@ try {
                LEFT JOIN (
                    SELECT 
                        SUM(rd.subtotal) AS total_retur_nominal,
-                       SUM(rd.harga_beli * rd.qty_retur) AS total_retur_modal
+                       SUM(rd.harga_beli * rd.qty_retur) AS total_retur_modal,
+                       SUM(CASE WHEN UPPER(p2.metode_bayar) = 'TUNAI' THEN rd.subtotal ELSE 0 END) AS retur_tunai,
+                       SUM(CASE WHEN UPPER(p2.metode_bayar) = 'QRIS' THEN rd.subtotal ELSE 0 END) AS retur_qris
                    FROM retur_penjualan_detail rd
                    JOIN retur_penjualan rp ON rd.retur_penjualan_id = rp.id
                    JOIN penjualan p2 ON rp.penjualan_id = p2.id
@@ -40,7 +47,11 @@ try {
     $stmtSum =$pdoBarang->prepare($sqlSum);$stmtSum->execute([$tglMulai,$tglSelesai, $tglMulai,$tglSelesai]);
     $summary =$stmtSum->fetch(PDO::FETCH_ASSOC);
 
-    // 2. Daftar Transaksi Penjualan + Keuntungan per Transaksi (Dipotong Retur Per Transaksi)
+    // 2. HITUNG TOTAL TRANSAKSI UNTUK PAGINASI
+    $stmtCount =$pdoBarang->prepare("SELECT COUNT(id) FROM penjualan WHERE DATE(tanggal) BETWEEN ? AND ?");
+    $stmtCount->execute([$tglMulai, $tglSelesai]);$totalRows  = (int)$stmtCount->fetchColumn();$totalPages = max(1, ceil($totalRows / $limit));
+
+    // 3. QUERY RIWAYAT PENJUALAN (SINGLE LIST)
     $sqlList = "SELECT 
                     p.*,
                     (SELECT COUNT(id) FROM penjualan_detail WHERE penjualan_id = p.id) AS item_count,
@@ -66,8 +77,10 @@ try {
                     GROUP BY rp.penjualan_id
                 ) r_tx ON p.id = r_tx.penjualan_id
                 WHERE DATE(p.tanggal) BETWEEN ? AND ?
-                ORDER BY p.id DESC";
-    $stmtList =$pdoBarang->prepare($sqlList);$stmtList->execute([$tglMulai,$tglSelesai]);
+                ORDER BY p.id DESC
+                LIMIT ? OFFSET ?";
+    
+    $stmtList =$pdoBarang->prepare($sqlList);$stmtList->bindValue(1, $tglMulai);$stmtList->bindValue(2, $tglSelesai);$stmtList->bindValue(3, $limit, PDO::PARAM_INT);$stmtList->bindValue(4, $offset, PDO::PARAM_INT);$stmtList->execute();
     $transaksiList =$stmtList->fetchAll(PDO::FETCH_ASSOC);
 
 } catch (PDOException $e) {
@@ -79,11 +92,11 @@ require_once BASE_PATH . 'partials/header.php';
 
 <div class="container-fluid my-4 px-4">
   
-  <!-- HEADER & FILTER -->
+  <!-- HEADER & FILTER TANGGAL -->
   <div class="row align-items-center mb-4">
     <div class="col-md-6">
-      <h4 class="fw-bold mb-1"><i class="bi bi-journal-text text-primary me-2"></i>Laporan Penjualan & Keuntungan</h4>
-      <p class="text-muted small mb-0">Rekap omzet, total modal, dan estimasi keuntungan bersih (laba).</p>
+      <h4 class="fw-bold mb-1"><i class="bi bi-journal-text text-primary me-2"></i>Laporan Penjualan</h4>
+      <p class="text-muted small mb-0">Ringkasan transaksi tunai, QRIS, serta estimasi keuntungan.</p>
     </div>
     <div class="col-md-6">
       <form method="GET" class="row g-2 justify-content-md-end">
@@ -102,57 +115,52 @@ require_once BASE_PATH . 'partials/header.php';
     </div>
   </div>
 
-  <!-- CARD SUMMARY STATISTIK DENGAN KEUNTUNGAN -->
+  <!-- 4 CARD RINGKASAN UTAMA -->
   <div class="row g-3 mb-4">
-    
-    <!-- CARD 1: OMZET -->
-    <div class="col-md-3">
-      <div class="card border-0 shadow-sm bg-primary text-white">
-        <div class="card-body p-3">
-          <small class="text-uppercase fw-semibold opacity-75">Total Omzet (Kotor)</small>
-          <h3 class="fw-bold mb-0 font-monospace">Rp <?= number_format($summary['total_omzet'], 0, ',', '.'); ?></h3>
-        </div>
-      </div>
-    </div>
-
-    <!-- CARD 2: TOTAL MODAL -->
-    <div class="col-md-3">
-      <div class="card border-0 shadow-sm bg-secondary text-white">
-        <div class="card-body p-3">
-          <small class="text-uppercase fw-semibold opacity-75">Total Modal (HPP)</small>
-          <h3 class="fw-bold mb-0 font-monospace">Rp <?= number_format($summary['total_modal'], 0, ',', '.'); ?></h3>
-        </div>
-      </div>
-    </div>
-
-    <!-- CARD 3: KEUNTUNGAN BERSIH (LABA) -->
     <div class="col-md-3">
       <div class="card border-0 shadow-sm bg-success text-white">
         <div class="card-body p-3">
-          <small class="text-uppercase fw-semibold opacity-75"><i class="bi bi-cash-stack me-1"></i>Keuntungan (Laba)</small>
-          <h3 class="fw-bold mb-0 font-monospace <?= $summary['total_keuntungan'] >= 0 ? 'text-warning' : 'text-danger'; ?>">
-            Rp <?= number_format($summary['total_keuntungan'], 0, ',', '.'); ?>
+          <small class="text-uppercase fw-semibold opacity-75"><i class="bi bi-cash me-1"></i>Total Tunai</small>
+          <h3 class="fw-bold mb-0 font-monospace">Rp <?= number_format($summary['total_tunai'], 0, ',', '.'); ?></h3>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-md-3">
+      <div class="card border-0 shadow-sm bg-info text-dark">
+        <div class="card-body p-3">
+          <small class="text-uppercase fw-bold opacity-75"><i class="bi bi-qr-code-scan me-1"></i>Total QRIS</small>
+          <h3 class="fw-bold mb-0 font-monospace">Rp <?= number_format($summary['total_qris'], 0, ',', '.'); ?></h3>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-md-3">
+      <div class="card border-0 shadow-sm bg-primary text-white">
+        <div class="card-body p-3">
+          <small class="text-uppercase fw-semibold opacity-75"><i class="bi bi-graph-up-arrow me-1"></i>Total Laba (Bersih)</small>
+          <h3 class="fw-bold mb-0 font-monospace text-warning">
+            Rp <?= number_format($summary['total_laba'], 0, ',', '.'); ?>
           </h3>
         </div>
       </div>
     </div>
 
-    <!-- CARD 4: TRANSAKSI -->
     <div class="col-md-3">
       <div class="card border-0 shadow-sm bg-dark text-white">
         <div class="card-body p-3">
-          <small class="text-uppercase fw-semibold opacity-75">Total Struk</small>
-          <h3 class="fw-bold mb-0 font-monospace"><?= number_format($summary['total_transaksi']); ?> <span class="fs-6 fw-normal">Transaksi</span></h3>
+          <small class="text-uppercase fw-semibold opacity-75"><i class="bi bi-receipt me-1"></i>Total Transaksi</small>
+          <h3 class="fw-bold mb-0 font-monospace"><?= number_format($summary['total_transaksi']); ?> <span class="fs-6 fw-normal">Struk</span></h3>
         </div>
       </div>
     </div>
-
   </div>
 
   <!-- TABEL RIWAYAT TRANSAKSI -->
   <div class="card shadow-sm border-0">
-    <div class="card-header bg-white py-3">
-      <h6 class="mb-0 fw-bold"><i class="bi bi-clock-history me-2 text-primary"></i>Riwayat Transaksi Penjualan</h6>
+    <div class="card-header bg-white py-3 border-bottom-0 d-flex justify-content-between align-items-center">
+      <h6 class="fw-bold mb-0 text-dark"><i class="bi bi-clock-history me-2 text-primary"></i>Riwayat Transaksi Penjualan</h6>
+      <span class="badge bg-light text-dark border">Total: <?= number_format($totalRows); ?> Transaksi</span>
     </div>
     <div class="table-responsive">
       <table class="table table-hover align-middle mb-0">
@@ -161,11 +169,11 @@ require_once BASE_PATH . 'partials/header.php';
             <th>Waktu & Faktur</th>
             <th class="text-center">Jumlah Item</th>
             <th class="text-end">Total Belanja</th>
-            <th class="text-end text-success fw-bold">Est. Untung</th>
+            <th class="text-end text-success fw-bold">Est. Laba</th>
             <th class="text-end">Uang Bayar</th>
             <th class="text-end">Kembalian</th>
             <th class="text-center">Metode</th>
-            <th class="text-center">#</th>
+            <th class="text-center">Aksi</th>
           </tr>
         </thead>
         <tbody>
@@ -178,6 +186,7 @@ require_once BASE_PATH . 'partials/header.php';
             </tr>
           <?php else: ?>
             <?php foreach ($transaksiList as$row): ?>
+              <?php $isQris = strtoupper($row['metode_bayar']) === 'QRIS'; ?>
               <tr>
                 <td>
                   <strong class="text-dark d-block"><?= htmlspecialchars($row['no_faktur']); ?></strong>
@@ -202,7 +211,11 @@ require_once BASE_PATH . 'partials/header.php';
                   Rp <?= number_format($row['kembalian'], 0, ',', '.'); ?>
                 </td>
                 <td class="text-center">
-                  <span class="badge bg-info text-dark"><?= htmlspecialchars($row['metode_bayar']); ?></span>
+                  <!-- PENANDA METODE PEMBAYARAN VISUAL -->
+                  <span class="badge <?= $isQris ? 'bg-info text-dark' : 'bg-secondary'; ?> fw-bold">
+                    <i class="bi <?= $isQris ? 'bi-qr-code-scan' : 'bi-cash-stack'; ?> me-1"></i>
+                    <?= htmlspecialchars(strtoupper($row['metode_bayar'])); ?>
+                  </span>
                 </td>
                 <td class="text-center">
                   <button type="button" class="btn btn-sm btn-outline-primary" onclick="lihatDetailStruk(<?= $row['id']; ?>)">
@@ -215,6 +228,31 @@ require_once BASE_PATH . 'partials/header.php';
         </tbody>
       </table>
     </div>
+
+    <!-- PAGINASI TUNGGAL -->
+    <?php if ($totalPages > 1): ?>
+      <div class="card-footer bg-white d-flex justify-content-between align-items-center py-3">
+        <small class="text-muted">
+          Menampilkan Halaman <strong><?= $page; ?></strong> dari <strong><?=$totalPages; ?></strong>
+        </small>
+        <nav>
+          <ul class="pagination pagination-sm mb-0">
+            <li class="page-item <?= $page <= 1 ? 'disabled' : ''; ?>">
+              <a class="page-link" href="?tgl_mulai=<?= $tglMulai; ?>&tgl_selesai=<?= $tglSelesai; ?>&page=<?=$page - 1; ?>">&laquo; Prev</a>
+            </li>
+            <?php for ($i = 1; $i <= $totalPages; $i++): ?>
+              <li class="page-item <?= $i ===$page ? 'active' : ''; ?>">
+                <a class="page-link" href="?tgl_mulai=<?= $tglMulai; ?>&tgl_selesai=<?=$tglSelesai; ?>&page=<?= $i; ?>"><?= $i; ?></a>
+              </li>
+            <?php endfor; ?>
+            <li class="page-item <?= $page >=$totalPages ? 'disabled' : ''; ?>">
+              <a class="page-link" href="?tgl_mulai=<?= $tglMulai; ?>&tgl_selesai=<?= $tglSelesai; ?>&page=<?=$page + 1; ?>">Next &raquo;</a>
+            </li>
+          </ul>
+        </nav>
+      </div>
+    <?php endif; ?>
+
   </div>
 
 </div>
@@ -298,6 +336,7 @@ function lihatDetailStruk(id) {
           <div class="text-center mb-3 border-bottom pb-2">
             <h5 class="fw-bold mb-0">KIOS MAFAZA</h5>
             <small class="text-muted d-block">${res.header.tanggal}</small>
+            <span class="badge bg-info text-dark mt-1">Metode Bayar: ${res.header.metode_bayar}</span>
           </div>
           <div class="table-responsive">
             <table class="table table-sm align-middle mb-3">
@@ -314,25 +353,17 @@ function lihatDetailStruk(id) {
           </div>
           <div class="p-2 bg-light rounded border font-monospace fs-6">
             <div class="d-flex justify-content-between mb-1">
-              <span>Total Omzet Kotor:</span>
+              <span>Total Omzet Struk:</span>
               <strong class="text-dark">Rp ${Math.round(res.header.total_bersih).toLocaleString('id-ID')}</strong>
             </div>
             ${totalNilaiRetur > 0 ? `
               <div class="d-flex justify-content-between mb-1 text-danger">
-                <span>Total Potongan Retur:</span>
+                <span>Potongan Retur:</span>
                 <strong>- Rp ${Math.round(totalNilaiRetur).toLocaleString('id-ID')}</strong>
               </div>
-              <div class="d-flex justify-content-between mb-1 text-primary fw-bold">
-                <span>Total Omzet Net:</span>
-                <span>Rp ${Math.round(omzetNet).toLocaleString('id-ID')}</span>
-              </div>
             ` : ''}
-            <div class="d-flex justify-content-between mb-1">
-              <span>Total Modal (HPP):</span>
-              <strong class="text-secondary">Rp ${Math.round(modalNet).toLocaleString('id-ID')}</strong>
-            </div>
             <div class="d-flex justify-content-between mb-1 ${totalUntungStruk >= 0 ? 'text-success' : 'text-danger'} fw-bold">
-              <span>Keuntungan (Laba Net):</span>
+              <span>Keuntungan Laba Struk:</span>
               <span>${totalUntungStruk >= 0 ? '+' : ''}Rp ${Math.round(totalUntungStruk).toLocaleString('id-ID')}</span>
             </div>
             <hr class="my-1">
