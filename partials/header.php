@@ -97,14 +97,7 @@ $current_page = $_SERVER['REQUEST_URI'];
     <div class="collapse navbar-collapse" id="navbarNav">
       <ul class="navbar-nav ms-auto gap-lg-1 align-items-lg-center">
         
-        <!-- Widget Waktu Server -->
-        <li class="nav-item me-lg-2 my-2 my-lg-0">
-          <div class="badge bg-secondary bg-opacity-25 text-light fw-normal border border-secondary px-3 py-1 text-start text-lg-center">
-            <small class="d-block text-muted" style="font-size: 0.65rem; line-height: 1;">WAKTU SERVER</small>
-            <span id="server-clock-date" class="me-2 text-warning fw-bold"><?= date('d/m/Y'); ?></span>
-            <span id="server-clock-time" class="font-monospace fw-bold">00:00:00</span>
-          </div>
-        </li>
+    
 
         <!-- Menu Home / Beranda -->
         <li class="nav-item">
@@ -156,15 +149,15 @@ $current_page = $_SERVER['REQUEST_URI'];
           </a>
           <ul class="dropdown-menu dropdown-menu-dark" aria-labelledby="navbarDropdownBarang">
             <li>
-              <a class="dropdown-item <?= (stristr($current_page, '/barang/') && !stristr($current_page, 'harga.php') && !stristr($current_page, 'kategori.php')) ? 'active' : ''; ?>" 
+              <a class="dropdown-item <?= (stristr($current_page, '/barang/') && !stristr($current_page, 'harga.php') && !stristr($current_page, 'harga_unset.php')) ? 'active' : ''; ?>" 
                  href="<?= BASE_URL; ?>barang/">
                 <i class="bi bi-box-seam me-2"></i>Data Barang
               </a>
             </li>
             <li>
-              <a class="dropdown-item <?= stristr($current_page, 'kategori.php') ? 'active' : ''; ?>" 
-                 href="<?= BASE_URL; ?>barang/kategori.php">
-                <i class="bi bi-tags me-2"></i>Kategori Barang
+              <a class="dropdown-item <?= stristr($current_page, 'harga_unset.php') ? 'active' : ''; ?>" 
+                 href="<?= BASE_URL; ?>barang/harga_unset.php">
+                <i class="bi bi-tags me-2"></i>Harga Unset
               </a>
             </li>
             <li>

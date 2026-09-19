@@ -16,6 +16,14 @@
         </button>
       </div>
 
+<li class="nav-item me-lg-2 my-3 my-lg-0">
+  <!-- Tambahkan fs-5 dan atur py-2 agar ruang badge ikut menyesuaikan -->
+  <div class="badge bg-secondary bg-opacity-25 text-dark fw-normal border border-secondary px-3 py-2 fs-5 text-start text-lg-center">
+    <span id="server-clock-date" class="me-4 text-dark fw-bold"><?= date('d/m/Y'); ?></span>
+    <span id="server-clock-time" class="font-monospace fw-bold">00:00:00</span>
+  </div>
+</li>
+
       <!-- AREA TOTAL PEMBAYARAN & PROSES (Sisi Kanan) -->
       <div class="d-flex align-items-center gap-3">
         <!-- TAMPILAN TOTAL PEMBAYARAN -->
