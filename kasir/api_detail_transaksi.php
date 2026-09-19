@@ -13,7 +13,7 @@ if ($id <= 0) {
 }
 
 try {
-    // Header
+    // 1. Header Penjualan
     $stmtH = $pdoBarang->prepare("SELECT * FROM penjualan WHERE id = ?");
     $stmtH->execute([$id]);
     $header = $stmtH->fetch(PDO::FETCH_ASSOC);
@@ -23,14 +23,25 @@ try {
         exit;
     }
 
-    // Details
-    $stmtD = $pdoBarang->prepare("SELECT * FROM penjualan_detail WHERE penjualan_id = ?");
+    // 2. Details Penjualan + Subquery Total Qty Retur per Item
+    $sqlD = "SELECT 
+                d.*,
+                COALESCE((
+                    SELECT SUM(rd.qty_retur) 
+                    FROM retur_penjualan_detail rd 
+                    WHERE rd.penjualan_detail_id = d.id
+                ), 0) AS qty_retur
+             FROM penjualan_detail d
+             WHERE d.penjualan_id = ?";
+             
+    $stmtD = $pdoBarang->prepare($sqlD);
     $stmtD->execute([$id]);
     $details = $stmtD->fetchAll(PDO::FETCH_ASSOC);
 
+    // 3. Response JSON (Sesuai struktur asli)
     echo json_encode([
-        'status' => 'success',
-        'header' => $header,
+        'status'  => 'success',
+        'header'  => $header,
         'details' => $details
     ]);
 

@@ -138,6 +138,36 @@ try {
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     ");
 
+// --- TABEL RETUR PENJUALAN ---
+$pdo->exec("
+    CREATE TABLE IF NOT EXISTS retur_penjualan (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        no_retur VARCHAR(50) NOT NULL UNIQUE,
+        penjualan_id INT NOT NULL,
+        total_retur DECIMAL(15, 2) NOT NULL DEFAULT 0.00,
+        alasan TEXT NULL,
+        tanggal DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (penjualan_id) REFERENCES penjualan(id) ON DELETE RESTRICT
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+");
+
+// --- TABEL RETUR PENJUALAN DETAIL ---
+$pdo->exec("
+    CREATE TABLE IF NOT EXISTS retur_penjualan_detail (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        retur_penjualan_id INT NOT NULL,
+        penjualan_detail_id INT NOT NULL,
+        barang_kemasan_id INT DEFAULT NULL,
+        nama_barang VARCHAR(255) NOT NULL,
+        nama_kemasan VARCHAR(100) NOT NULL,
+        qty_retur INT NOT NULL DEFAULT 1,
+        harga_jual DECIMAL(15, 2) NOT NULL DEFAULT 0.00,
+        harga_beli DECIMAL(15, 2) NOT NULL DEFAULT 0.00,
+        subtotal DECIMAL(15, 2) NOT NULL DEFAULT 0.00,
+        FOREIGN KEY (retur_penjualan_id) REFERENCES retur_penjualan(id) ON DELETE CASCADE,
+        FOREIGN KEY (penjualan_detail_id) REFERENCES penjualan_detail(id) ON DELETE RESTRICT
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+");
     $pdoBarang = $pdo;
 
 } catch (PDOException $e) {

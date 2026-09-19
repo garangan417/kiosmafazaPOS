@@ -7,16 +7,17 @@ require_once __DIR__ . '/../config.php';
 require_once BASE_PATH . 'database/db_barang.php';
 
 // Filter Tanggal (Default: Hari Ini)
-$tglMulai   = $_GET['tgl_mulai'] ?? date('Y-m-d');
-$tglSelesai = $_GET['tgl_selesai'] ?? date('Y-m-d');
+$tglMulai   =$_GET['tgl_mulai'] ?? date('Y-m-d');
+$tglSelesai =$_GET['tgl_selesai'] ?? date('Y-m-d');
 
 try {
-    // 1. Total Summary (Omzet, Modal, & Laba)
+    // 1. Total Summary (Omzet, Modal, Laba Net Setelah Dipotong Retur)
     $sqlSum = "SELECT 
-                    COUNT(p.id) AS total_transaksi,
-                    COALESCE(SUM(p.total_bersih), 0) AS total_omzet,
-                    COALESCE(SUM(det.total_modal_transaksi), 0) AS total_modal,
-                    COALESCE(SUM(p.total_bersih - det.total_modal_transaksi), 0) AS total_keuntungan
+                    COUNT(DISTINCT p.id) AS total_transaksi,
+                    COALESCE(SUM(p.total_bersih), 0) - COALESCE(r.total_retur_nominal, 0) AS total_omzet,
+                    COALESCE(SUM(det.total_modal_transaksi), 0) - COALESCE(r.total_retur_modal, 0) AS total_modal,
+                    (COALESCE(SUM(p.total_bersih), 0) - COALESCE(r.total_retur_nominal, 0)) - 
+                    (COALESCE(SUM(det.total_modal_transaksi), 0) - COALESCE(r.total_retur_modal, 0)) AS total_keuntungan
                FROM penjualan p
                LEFT JOIN (
                    SELECT 
@@ -25,27 +26,49 @@ try {
                    FROM penjualan_detail
                    GROUP BY penjualan_id
                ) det ON p.id = det.penjualan_id
+               LEFT JOIN (
+                   SELECT 
+                       SUM(rd.subtotal) AS total_retur_nominal,
+                       SUM(rd.harga_beli * rd.qty_retur) AS total_retur_modal
+                   FROM retur_penjualan_detail rd
+                   JOIN retur_penjualan rp ON rd.retur_penjualan_id = rp.id
+                   JOIN penjualan p2 ON rp.penjualan_id = p2.id
+                   WHERE DATE(p2.tanggal) BETWEEN ? AND ?
+               ) r ON 1=1
                WHERE DATE(p.tanggal) BETWEEN ? AND ?";
 
-    $stmtSum = $pdoBarang->prepare($sqlSum);
-    $stmtSum->execute([$tglMulai, $tglSelesai]);
-    $summary = $stmtSum->fetch(PDO::FETCH_ASSOC);
+    $stmtSum =$pdoBarang->prepare($sqlSum);$stmtSum->execute([$tglMulai,$tglSelesai, $tglMulai,$tglSelesai]);
+    $summary =$stmtSum->fetch(PDO::FETCH_ASSOC);
 
-    // 2. Daftar Transaksi Penjualan + Keuntungan per Transaksi
+    // 2. Daftar Transaksi Penjualan + Keuntungan per Transaksi (Dipotong Retur Per Transaksi)
     $sqlList = "SELECT 
                     p.*,
                     (SELECT COUNT(id) FROM penjualan_detail WHERE penjualan_id = p.id) AS item_count,
-                    COALESCE(p.total_bersih - (
-                        SELECT SUM(COALESCE(harga_beli, 0) * COALESCE(qty, 0)) 
-                        FROM penjualan_detail 
-                        WHERE penjualan_id = p.id
-                    ), 0) AS untung_per_transaksi
+                    (
+                        (p.total_bersih - COALESCE(r_tx.retur_nominal, 0)) - 
+                        (
+                            COALESCE((
+                                SELECT SUM(COALESCE(harga_beli, 0) * COALESCE(qty, 0)) 
+                                FROM penjualan_detail 
+                                WHERE penjualan_id = p.id
+                            ), 0) - COALESCE(r_tx.retur_modal, 0)
+                        )
+                    ) AS untung_per_transaksi,
+                    COALESCE(r_tx.retur_nominal, 0) AS total_retur_transaksi
                 FROM penjualan p
+                LEFT JOIN (
+                    SELECT 
+                        rp.penjualan_id,
+                        SUM(rd.subtotal) AS retur_nominal,
+                        SUM(rd.harga_beli * rd.qty_retur) AS retur_modal
+                    FROM retur_penjualan_detail rd
+                    JOIN retur_penjualan rp ON rd.retur_penjualan_id = rp.id
+                    GROUP BY rp.penjualan_id
+                ) r_tx ON p.id = r_tx.penjualan_id
                 WHERE DATE(p.tanggal) BETWEEN ? AND ?
                 ORDER BY p.id DESC";
-    $stmtList = $pdoBarang->prepare($sqlList);
-    $stmtList->execute([$tglMulai, $tglSelesai]);
-    $transaksiList = $stmtList->fetchAll(PDO::FETCH_ASSOC);
+    $stmtList =$pdoBarang->prepare($sqlList);$stmtList->execute([$tglMulai,$tglSelesai]);
+    $transaksiList =$stmtList->fetchAll(PDO::FETCH_ASSOC);
 
 } catch (PDOException $e) {
     die("Error Database: " . $e->getMessage());
@@ -154,11 +177,14 @@ require_once BASE_PATH . 'partials/header.php';
               </td>
             </tr>
           <?php else: ?>
-            <?php foreach ($transaksiList as $row): ?>
+            <?php foreach ($transaksiList as$row): ?>
               <tr>
                 <td>
                   <strong class="text-dark d-block"><?= htmlspecialchars($row['no_faktur']); ?></strong>
                   <small class="text-muted"><i class="bi bi-calendar-event me-1"></i><?= date('d/m/Y H:i', strtotime($row['tanggal'])); ?></small>
+                  <?php if ($row['total_retur_transaksi'] > 0): ?>
+                    <span class="badge bg-danger text-white d-block mt-1" style="width: fit-content;">Ada Retur</span>
+                  <?php endif; ?>
                 </td>
                 <td class="text-center">
                   <span class="badge bg-light text-dark border"><?= $row['item_count']; ?> Jenis Item</span>
@@ -195,7 +221,7 @@ require_once BASE_PATH . 'partials/header.php';
 
 <!-- MODAL DETAIL STRUK TRANSAKSI -->
 <div class="modal fade" id="modalDetailStruk" tabindex="-1">
-  <div class="modal-dialog modal-dialog-centered">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
     <div class="modal-content">
       <div class="modal-header bg-dark text-white py-2">
         <h6 class="modal-title fw-bold" id="detail_faktur_title">Detail Transaksi</h6>
@@ -212,7 +238,10 @@ require_once BASE_PATH . 'partials/header.php';
 </div>
 
 <script>
+let currentPenjualanId = 0;
+
 function lihatDetailStruk(id) {
+  currentPenjualanId = id;
   const modal = new bootstrap.Modal(document.getElementById('modalDetailStruk'));
   const body = document.getElementById('detail_struk_body');
   
@@ -227,50 +256,83 @@ function lihatDetailStruk(id) {
         
         let itemsHtml = '';
         let totalModalStruk = 0;
+        let totalNilaiRetur = 0;
+        let totalModalRetur = 0;
 
         res.details.forEach(d => {
           let modalItem = (parseFloat(d.harga_beli) || 0) * parseInt(d.qty);
           totalModalStruk += modalItem;
+
+          let qtyRetur = parseInt(d.qty_retur) || 0;
+          let sisaQty = parseInt(d.qty) - qtyRetur;
+          
+          if (qtyRetur > 0) {
+            totalNilaiRetur += (qtyRetur * parseFloat(d.harga_jual));
+            totalModalRetur += (qtyRetur * (parseFloat(d.harga_beli) || 0));
+          }
 
           itemsHtml += `
             <tr>
               <td>
                 <div class="fw-bold text-dark">${d.nama_barang}</div>
                 <small class="text-muted">${d.nama_kemasan} @ Rp ${Math.round(d.harga_jual).toLocaleString('id-ID')} (Modal: Rp ${Math.round(d.harga_beli).toLocaleString('id-ID')})</small>
+                ${qtyRetur > 0 ? `<div class="badge bg-danger text-white mt-1">Diretur: ${qtyRetur}${d.satuan || ''}</div>` : ''}
               </td>
-              <td class="text-center fw-bold">${d.qty} ${d.satuan}</td>
+              <td class="text-center fw-bold">${d.qty} ${d.satuan || ''}</td>
               <td class="text-end font-monospace fw-bold">Rp ${Math.round(d.subtotal).toLocaleString('id-ID')}</td>
+              <td class="text-center">
+                ${sisaQty > 0 ? `
+                  <button type="button" class="btn btn-xs btn-outline-danger py-0 px-2" style="font-size: 0.75rem;" onclick="prosesReturItem(${d.penjualan_id},${d.id}, ${sisaQty}, '${d.nama_barang.replace(/'/g, "\\'")}')">
+                    <i class="bi bi-arrow-return-left me-1"></i>Retur
+                  </button>
+                ` : '<span class="badge bg-secondary">Habis Diretur</span>'}
+              </td>
             </tr>`;
         });
 
-        let totalUntungStruk = parseFloat(res.header.total_bersih) - totalModalStruk;
+        let omzetNet = parseFloat(res.header.total_bersih) - totalNilaiRetur;
+        let modalNet = totalModalStruk - totalModalRetur;
+        let totalUntungStruk = omzetNet - modalNet;
 
         body.innerHTML = `
           <div class="text-center mb-3 border-bottom pb-2">
             <h5 class="fw-bold mb-0">KIOS MAFAZA</h5>
             <small class="text-muted d-block">${res.header.tanggal}</small>
           </div>
-          <table class="table table-sm align-middle mb-3">
-            <thead>
-              <tr class="table-light">
-                <th>Item</th>
-                <th class="text-center">Qty</th>
-                <th class="text-end">Subtotal</th>
-              </tr>
-            </thead>
-            <tbody>${itemsHtml}</tbody>
-          </table>
+          <div class="table-responsive">
+            <table class="table table-sm align-middle mb-3">
+              <thead>
+                <tr class="table-light">
+                  <th>Item</th>
+                  <th class="text-center">Qty</th>
+                  <th class="text-end">Subtotal</th>
+                  <th class="text-center">Aksi</th>
+                </tr>
+              </thead>
+              <tbody>${itemsHtml}</tbody>
+            </table>
+          </div>
           <div class="p-2 bg-light rounded border font-monospace fs-6">
             <div class="d-flex justify-content-between mb-1">
-              <span>Total Omzet:</span>
+              <span>Total Omzet Kotor:</span>
               <strong class="text-dark">Rp ${Math.round(res.header.total_bersih).toLocaleString('id-ID')}</strong>
             </div>
+            ${totalNilaiRetur > 0 ? `
+              <div class="d-flex justify-content-between mb-1 text-danger">
+                <span>Total Potongan Retur:</span>
+                <strong>- Rp ${Math.round(totalNilaiRetur).toLocaleString('id-ID')}</strong>
+              </div>
+              <div class="d-flex justify-content-between mb-1 text-primary fw-bold">
+                <span>Total Omzet Net:</span>
+                <span>Rp ${Math.round(omzetNet).toLocaleString('id-ID')}</span>
+              </div>
+            ` : ''}
             <div class="d-flex justify-content-between mb-1">
               <span>Total Modal (HPP):</span>
-              <strong class="text-secondary">Rp ${Math.round(totalModalStruk).toLocaleString('id-ID')}</strong>
+              <strong class="text-secondary">Rp ${Math.round(modalNet).toLocaleString('id-ID')}</strong>
             </div>
             <div class="d-flex justify-content-between mb-1 ${totalUntungStruk >= 0 ? 'text-success' : 'text-danger'} fw-bold">
-              <span>Keuntungan (Laba):</span>
+              <span>Keuntungan (Laba Net):</span>
               <span>${totalUntungStruk >= 0 ? '+' : ''}Rp ${Math.round(totalUntungStruk).toLocaleString('id-ID')}</span>
             </div>
             <hr class="my-1">
@@ -287,6 +349,41 @@ function lihatDetailStruk(id) {
         body.innerHTML = '<div class="alert alert-danger">' + res.message + '</div>';
       }
     });
+}
+
+function prosesReturItem(penjualanId, penjualanDetailId, maxQty, namaBarang) {
+  const qtyInput = prompt(`Retur untuk item "${namaBarang}"\nMasukkan Qty Retur (Maksimal ${maxQty}):`, "1");
+  if (qtyInput === null) return;
+
+  const qtyRetur = parseInt(qtyInput);
+  if (isNaN(qtyRetur) || qtyRetur <= 0 || qtyRetur > maxQty) {
+    alert(`Qty retur tidak valid! Harus angka antara 1 dan ${maxQty}.`);
+    return;
+  }
+
+  const alasan = prompt("Masukkan alasan retur:", "Barang Cacat/Rusak");
+  if (alasan === null) return;
+
+  fetch('api_retur_item.php', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      penjualan_id: penjualanId,
+      penjualan_detail_id: penjualanDetailId,
+      qty_retur: qtyRetur,
+      alasan: alasan
+    })
+  })
+  .then(res => res.json())
+  .then(res => {
+    alert(res.message);
+    if (res.status === 'success') {
+      lihatDetailStruk(penjualanId);
+    }
+  })
+  .catch(err => {
+    alert('Terjadi kesalahan jaringan/server!');
+  });
 }
 </script>
 

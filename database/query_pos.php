@@ -185,6 +185,86 @@ function simpanPenjualan(PDO $pdo, array $header, array $items): array {
                 floatval($item['subtotal'])
             ]);
 
+       function simpanReturPenjualan(PDO $pdo, array $header, array $items): array {
+    $cfgStok   = getPengaturanStok($pdo);
+    $stokAktif = $cfgStok['fitur_stok'];
+
+    $alreadyInTransaction = $pdo->inTransaction();
+
+    try {
+        if (!$alreadyInTransaction) {
+            $pdo->beginTransaction();
+        }
+
+        // 1. Insert Header Retur
+        $sqlH = "INSERT INTO retur_penjualan (no_retur, penjualan_id, total_retur, alasan)
+                 VALUES (?, ?, ?, ?)";
+        $stmtH = $pdo->prepare($sqlH);
+        $stmtH->execute([
+            $header['no_retur'],
+            $header['penjualan_id'],
+            $header['total_retur'],
+            $header['alasan'] ?? ''
+        ]);
+
+        $returId = $pdo->lastInsertId();
+
+        // 2. Prepare Query Detail & Stok
+        $sqlD = "INSERT INTO retur_penjualan_detail (retur_penjualan_id, barang_kemasan_id, nama_barang, nama_kemasan, qty, harga_jual, subtotal)
+                 VALUES (?, ?, ?, ?, ?, ?, ?)";
+        $stmtD = $pdo->prepare($sqlD);
+
+        $stmtCurStok = $pdo->prepare("SELECT COALESCE(stok, 0) FROM barang_kemasan WHERE id = ?");
+        $stmtMutasi  = $pdo->prepare("INSERT INTO stok_mutasi (barang_kemasan_id, jenis_mutasi, qty, stok_sebelum, stok_sesudah, keterangan) VALUES (?, 'RETUR_MASUK', ?, ?, ?, ?)");
+        $stmtUpdStok = $pdo->prepare("UPDATE barang_kemasan SET stok = ? WHERE id = ?");
+
+        // 3. Loop Detail Items
+        foreach ($items as $item) {
+            $kemasanId = intval($item['barang_kemasan_id'] ?? 0);
+            $qtyRetur  = intval($item['qty']);
+
+            $stmtD->execute([
+                $returId,
+                $kemasanId,
+                $item['nama_barang'] ?? '',
+                $item['nama_kemasan'] ?? '',
+                $qtyRetur,
+                floatval($item['harga_jual']),
+                floatval($item['subtotal'])
+            ]);
+
+            // Kembalikan Stok ke Inventori
+            if ($stokAktif && $kemasanId > 0) {
+                $stmtCurStok->execute([$kemasanId]);
+                $stokSebelum = intval($stmtCurStok->fetchColumn() ?: 0);
+                $stokSesudah = $stokSebelum + $qtyRetur;
+
+                $ketMutasi = 'Retur Penjualan No: ' . $header['no_retur'];
+                $stmtMutasi->execute([$kemasanId, $qtyRetur, $stokSebelum, $stokSesudah, $ketMutasi]);
+
+                $stmtUpdStok->execute([$stokSesudah, $kemasanId]);
+            }
+        }
+
+        if (!$alreadyInTransaction && $pdo->inTransaction()) {
+            $pdo->commit();
+        }
+
+        return [
+            'status'   => true,
+            'retur_id' => $returId,
+            'message'  => 'Retur penjualan berhasil diproses dan stok telah diperbarui!'
+        ];
+
+    } catch (PDOException $e) {
+        if (!$alreadyInTransaction && $pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        return ['status' => false, 'message' => 'Gagal memproses retur: ' . $e->getMessage()];
+    }
+}
+    
+
             // Update Stok
             if ($stokAktif && $kemasanId > 0) {
                 $stmtCurStok->execute([$kemasanId]);
