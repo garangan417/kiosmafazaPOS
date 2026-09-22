@@ -26,7 +26,7 @@ if (!$pelanggan) {
     exit;
 }
 
-// 2. Ambil Riwayat Utang (Diurutkan dari TERLAMA ke TERBARU untuk kalkulasi sesi yang akurat)
+// 2. Ambil Riwayat Utang (TERLAMA ke TERBARU untuk kalkulasi sesi yang akurat)
 $stmtU = $pdoPelanggan->prepare("SELECT * FROM utang WHERE pelanggan_id = ? ORDER BY created_at ASC, id ASC");
 $stmtU->execute([$pelanggan_id]);
 $riwayatAsc = $stmtU->fetchAll(PDO::FETCH_ASSOC);
@@ -52,10 +52,10 @@ foreach ($riwayatAsc as $r) {
     }
 }
 
-// Hitung sisa utang sesi saat ini (Jamin tidak minus dengan max(0, ...))
+// Hitung sisa utang sesi saat ini (Jamin tidak minus)
 $sisaUtang = max(0, $totalUtangSesi - $totalBayarSesi);
 
-// Data riwayat di-reverse kembali untuk tampilan tabel (terbaru di atas)
+// Data riwayat di-reverse untuk tampilan tabel (terbaru di atas)
 $riwayat = array_reverse($riwayatAsc);
 ?>
 
@@ -78,7 +78,7 @@ $riwayat = array_reverse($riwayatAsc);
       <!-- Body Modal -->
       <div class="modal-body p-4">
         
-        <!-- Summary Cards (Menampilkan Ringkasan Sesi Aktif) -->
+        <!-- Summary Cards (Ringkasan Sesi Aktif) -->
         <div class="row g-2 mb-3">
           <div class="col-4">
             <div class="p-2 border rounded bg-light text-center">
@@ -100,13 +100,12 @@ $riwayat = array_reverse($riwayatAsc);
           </div>
         </div>
 
-        <!-- Form Quick Action (Murni HTML POST) -->
+        <!-- Form Quick Action -->
         <div class="card bg-light border-0 p-3 mb-4">
           <h6 class="fw-bold mb-2 text-dark"><i class="bi bi-plus-circle me-1"></i> Transaksi Cepat</h6>
           
           <form action="<?= BASE_URL; ?>utang/index.php" method="POST" onsubmit="setWaktuBrowserDetailUtang(this)">
             <input type="hidden" name="pelanggan_id" value="<?= $pelanggan['id']; ?>">
-            <!-- Input Tanggal Diisi Secara Client-Side (Waktu Browser Kasir) -->
             <input type="hidden" name="tanggal" class="input-waktu-browser">
 
             <div class="row g-2">
@@ -125,7 +124,7 @@ $riwayat = array_reverse($riwayatAsc);
               </div>
 
               <div class="col-md-3">
-                <textarea name="keterangan" class="form-control form-control-sm" rows="1" placeholder="Rincian barang / Catatan (Tekan Enter untuk baris baru)"></textarea>
+                <textarea name="keterangan" class="form-control form-control-sm" rows="1" placeholder="Rincian barang / Catatan"></textarea>
               </div>
 
               <div class="col-md-2">
@@ -184,7 +183,7 @@ $riwayat = array_reverse($riwayatAsc);
 
       <!-- Footer Modal -->
       <div class="modal-footer bg-light">
-        <button type="button" class="btn-close-modal btn btn-secondary btn-sm" data-bs-dismiss="modal">Tutup</button>
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Tutup</button>
       </div>
 
     </div>

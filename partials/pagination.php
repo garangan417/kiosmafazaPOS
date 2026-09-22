@@ -5,7 +5,7 @@ if (!isset($pagination) || $pagination['total_pages'] <= 1) return;
 $currentPage = $pagination['current_page'];
 $totalPages  = $pagination['total_pages'];
 
-// Ambil parameter URL yang ada (search, kategori, dll) agar tidak hilang saat ganti halaman
+// Ambil parameter URL yang ada (search, filter, dll) agar tidak hilang saat ganti halaman
 $queryParams = $_GET;
 ?>
 
@@ -19,7 +19,7 @@ $queryParams = $_GET;
       <!-- Tombol Prev -->
       <li class="page-item <?= ($currentPage <= 1) ? 'disabled' : ''; ?>">
         <?php $queryParams['page'] = $currentPage - 1; ?>
-        <a class="page-item" href="?<?= http_build_query($queryParams); ?>" class="page-link">Previous</a>
+        <a class="page-link" href="?<?= http_build_query($queryParams); ?>">Previous</a>
       </li>
 
       <!-- Angka Halaman -->

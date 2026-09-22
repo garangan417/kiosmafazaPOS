@@ -19,7 +19,9 @@
   <div class="card shadow-sm border-0 p-3">
     <div class="d-flex justify-content-between align-items-center mb-3">
       <h5 class="card-title mb-0 fw-bold">Daftar Pelanggan</h5>
-      <span class="badge bg-secondary">Total: <?= count($dataPelanggan); ?></span>
+      <span class="badge bg-secondary">
+        Total: <?= number_format($pagination['total_items'] ?? count($dataPelanggan)); ?>
+      </span>
     </div>
 
     <div class="table-responsive">
@@ -39,8 +41,11 @@
             </tr>
           <?php else: ?>
             <?php foreach ($dataPelanggan as $row): ?>
-              <?php $hasUtang = $row['sisa_utang'] > 0; ?>
-              <tr>
+              <?php 
+                $hasUtang = $row['sisa_utang'] > 0;
+                $rowClass = $hasUtang ? 'table-warning' : '';
+              ?>
+              <tr class="<?= $rowClass; ?>">
                 <td class="fw-bold text-dark">
                   <?= htmlspecialchars($row['nama']); ?><br>
                   <small class="text-muted fw-normal"><?= htmlspecialchars($row['alamat'] ?: '-'); ?></small>
@@ -62,7 +67,7 @@
                   <?php endif; ?>
                 </td>
                 <td class="text-center">
-                  <!-- Tombol Detail Utang -->
+                  <!-- Tombol Detail Utang (HTMX) -->
                   <button class="btn btn-sm btn-outline-info me-1" 
                           hx-get="<?= BASE_URL; ?>pelanggan/detail_utang.php?id=<?= $row['id']; ?>"
                           hx-target="#container-modal-detail"
@@ -80,7 +85,7 @@
                     <i class="bi bi-pencil-square"></i>
                   </button>
 
-                  <!-- Form Hapus Pelanggan -->
+                  <!-- Form Hapus Pelanggan (HTMX) -->
                   <form hx-post="<?= BASE_URL; ?>pelanggan/index.php" 
                         hx-target="#area-pelanggan" 
                         hx-swap="outerHTML" 
@@ -108,7 +113,7 @@
                     <form hx-post="<?= BASE_URL; ?>pelanggan/index.php" 
                           hx-target="#area-pelanggan" 
                           hx-swap="outerHTML"
-                          hx-on::after-request="bootstrap.Modal.getInstance(document.getElementById('modalEdit<?= $row['id']; ?>')).hide();">
+                          hx-on::after-request="if(event.detail.successful) { const m = bootstrap.Modal.getInstance(document.getElementById('modalEdit<?= $row['id']; ?>')); if(m) m.hide(); }">
                       <div class="modal-body">
                         <input type="hidden" name="action" value="edit">
                         <input type="hidden" name="id" value="<?= $row['id']; ?>">
@@ -120,12 +125,12 @@
 
                         <div class="mb-3">
                           <label class="form-label small fw-semibold">No. WhatsApp / HP</label>
-                          <input type="text" name="no_hp" class="form-control" value="<?= htmlspecialchars($row['no_hp']); ?>">
+                          <input type="text" name="no_hp" class="form-control" value="<?= htmlspecialchars($row['no_hp'] ?? ''); ?>">
                         </div>
 
                         <div class="mb-3">
                           <label class="form-label small fw-semibold">Alamat / Catatan</label>
-                          <textarea name="alamat" class="form-control" rows="2"><?= htmlspecialchars($row['alamat']); ?></textarea>
+                          <textarea name="alamat" class="form-control" rows="2"><?= htmlspecialchars($row['alamat'] ?? ''); ?></textarea>
                         </div>
                       </div>
                       <div class="modal-footer">
@@ -141,6 +146,62 @@
         </tbody>
       </table>
     </div>
+
+    <!-- PAGINASI (HTMX-compatible) -->
+    <?php if (!empty($pagination) && $pagination['total_pages'] > 1): ?>
+      <div class="d-flex flex-column flex-md-row justify-content-between align-items-center mt-3 gap-2">
+        <small class="text-muted">
+          Menampilkan <strong><?= $pagination['from']; ?></strong>-<strong><?= $pagination['to']; ?></strong> 
+          dari <strong><?= $pagination['total_items']; ?></strong> pelanggan
+        </small>
+
+        <nav>
+          <ul class="pagination pagination-sm mb-0">
+            <?php
+            $currentPage = $pagination['current_page'];
+            $totalPages  = $pagination['total_pages'];
+            ?>
+
+            <!-- Tombol Prev -->
+            <li class="page-item <?= ($currentPage <= 1) ? 'disabled' : ''; ?>">
+              <a class="page-link" 
+                 href="?page=<?= $currentPage - 1; ?>"
+                 hx-get="<?= BASE_URL; ?>pelanggan/?page=<?= $currentPage - 1; ?>"
+                 hx-target="#area-pelanggan"
+                 hx-swap="outerHTML"
+                 hx-push-url="true">Previous</a>
+            </li>
+
+            <!-- Nomor Halaman (Windowing) -->
+            <?php for ($i = 1; $i <= $totalPages; $i++): ?>
+              <?php if ($i == 1 || $i == $totalPages || abs($i - $currentPage) <= 1): ?>
+                <li class="page-item <?= ($i === $currentPage) ? 'active' : ''; ?>">
+                  <a class="page-link" 
+                     href="?page=<?= $i; ?>"
+                     hx-get="<?= BASE_URL; ?>pelanggan/?page=<?= $i; ?>"
+                     hx-target="#area-pelanggan"
+                     hx-swap="outerHTML"
+                     hx-push-url="true"><?= $i; ?></a>
+                </li>
+              <?php elseif ($i == 2 || $i == $totalPages - 1): ?>
+                <li class="page-item disabled"><span class="page-link">…</span></li>
+              <?php endif; ?>
+            <?php endfor; ?>
+
+            <!-- Tombol Next -->
+            <li class="page-item <?= ($currentPage >= $totalPages) ? 'disabled' : ''; ?>">
+              <a class="page-link" 
+                 href="?page=<?= $currentPage + 1; ?>"
+                 hx-get="<?= BASE_URL; ?>pelanggan/?page=<?= $currentPage + 1; ?>"
+                 hx-target="#area-pelanggan"
+                 hx-swap="outerHTML"
+                 hx-push-url="true">Next</a>
+            </li>
+          </ul>
+        </nav>
+      </div>
+    <?php endif; ?>
+
   </div>
 
 </div>

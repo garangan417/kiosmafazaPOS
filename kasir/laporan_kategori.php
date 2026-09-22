@@ -1,4 +1,3 @@
-```php
 <?php
 // kasir/laporan_kategori.php
 ini_set('display_errors', 1);
@@ -1104,4 +1103,3 @@ require_once BASE_PATH . 'partials/header.php';
 
 
 <?php require_once BASE_PATH . 'partials/footer.php'; ?>
-```

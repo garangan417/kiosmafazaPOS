@@ -7,6 +7,13 @@ let currentSearchResults = [];
 document.addEventListener("DOMContentLoaded", function() {
     const inputScan = document.getElementById('inputScan');
 
+    // ⚠️ PENTING: Cek dulu apakah elemen ada (halaman kasir saja)
+    // Halaman harga.php, index.php, dll. TIDAK punya #inputScan
+    if (!inputScan) {
+        // Bukan halaman kasir, skip semua logic kasir
+        return;
+    }
+
     // Event handler Scan / Search
     inputScan.addEventListener('keyup', function(e) {
         let q = this.value.trim();

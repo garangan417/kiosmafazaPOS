@@ -10,48 +10,43 @@ if (!function_exists('formatRupiah')) {
 }
 
 /**
- * Fungsi Helper untuk Menghitung Sisa Utang dengan Logika Sesi
+ * Helper: Hitung sisa utang per pelanggan dari riwayat yang SUDAH DI-GROUP.
+ * (Menggantikan hitungSisaUtangSesi agar tidak N+1 query)
  */
-if (!function_exists('hitungSisaUtangSesi')) {
-    function hitungSisaUtangSesi($pdoPelanggan, $pelanggan_id) {
-        try {
-            $stmt = $pdoPelanggan->prepare("SELECT tipe, nominal FROM utang WHERE pelanggan_id = ? ORDER BY created_at ASC, id ASC");
-            $stmt->execute([$pelanggan_id]);
-            $riwayat = $stmt->fetchAll(PDO::FETCH_ASSOC);
+if (!function_exists('hitungSisaUtangDariRiwayat')) {
+    function hitungSisaUtangDariRiwayat(array $riwayat): float {
+        $totalUtangSesi = 0;
+        $totalBayarSesi = 0;
 
-            $totalUtangSesi = 0;
-            $totalBayarSesi = 0;
+        foreach ($riwayat as $r) {
+            $nominal = floatval($r['nominal']);
 
-            foreach ($riwayat as $r) {
-                $nominal = floatval($r['nominal']);
-
-                if ($r['tipe'] === 'utang') {
-                    $totalUtangSesi += $nominal;
-                } else {
-                    $totalBayarSesi += $nominal;
-                }
-
-                // Jika sesi lunas/lebih, reset ke 0 untuk sesi berikutnya
-                if ($totalUtangSesi > 0 && $totalBayarSesi >= $totalUtangSesi) {
-                    $totalUtangSesi = 0;
-                    $totalBayarSesi = 0;
-                }
+            if ($r['tipe'] === 'utang') {
+                $totalUtangSesi += $nominal;
+            } else {
+                $totalBayarSesi += $nominal;
             }
 
-            return max(0, $totalUtangSesi - $totalBayarSesi);
-        } catch (PDOException $e) {
-            return 0;
+            // Jika sesi lunas/lebih, reset untuk sesi berikutnya
+            if ($totalUtangSesi > 0 && $totalBayarSesi >= $totalUtangSesi) {
+                $totalUtangSesi = 0;
+                $totalBayarSesi = 0;
+            }
         }
+
+        return max(0, $totalUtangSesi - $totalBayarSesi);
     }
 }
 
-$errorMsg = '';
+$errorMsg   = '';
 $successMsg = '';
 
 // Cek request HTMX
 $isHtmx = isset($_SERVER['HTTP_HX_REQUEST']);
 
+// ============================================================
 // 1. PROSES POST (TAMBAH / EDIT / HAPUS)
+// ============================================================
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
 
@@ -98,7 +93,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     elseif ($action === 'delete') {
         $id = intval($_POST['id'] ?? 0);
         if ($id > 0) {
-            $sisaUtang = hitungSisaUtangSesi($pdoPelanggan, $id);
+            // Cek sisa utang (hanya untuk pelanggan ini)
+            $stmtU = $pdoPelanggan->prepare("SELECT tipe, nominal FROM utang WHERE pelanggan_id = ? ORDER BY created_at ASC, id ASC");
+            $stmtU->execute([$id]);
+            $sisaUtang = hitungSisaUtangDariRiwayat($stmtU->fetchAll(PDO::FETCH_ASSOC));
 
             if ($sisaUtang > 0) {
                 $errorMsg = "Pelanggan tidak bisa dihapus karena masih memiliki sisa utang sebesar " . formatRupiah($sisaUtang) . "!";
@@ -114,28 +112,97 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
-    // Jika POST biasa (non-HTMX)
+    // Jika POST biasa (non-HTMX) dan tidak ada error
     if (!$isHtmx && empty($errorMsg)) {
         header("Location: " . BASE_URL . "pelanggan/");
         exit;
     }
 }
 
-// 2. AMBIL DATA PELANGGAN
+// ============================================================
+// 2. AMBIL DATA PELANGGAN + UTANG (EFISIEN, TANPA N+1)
+// ============================================================
 $dataPelanggan = [];
+
 try {
+    // 2A. Ambil SEMUA pelanggan dalam 1 query
     $query = $pdoPelanggan->query("SELECT * FROM pelanggan ORDER BY id DESC");
     $pelangganRaw = $query->fetchAll(PDO::FETCH_ASSOC);
 
+    // 2B. Ambil SEMUA riwayat utang dalam 1 query
+    $stmtUtang = $pdoPelanggan->query("
+        SELECT pelanggan_id, tipe, nominal, created_at, id 
+        FROM utang 
+        ORDER BY pelanggan_id ASC, created_at ASC, id ASC
+    ");
+    $utangRaw = $stmtUtang->fetchAll(PDO::FETCH_ASSOC);
+
+    // 2C. Group riwayat utang per pelanggan
+    $utangByPelanggan = [];
+    foreach ($utangRaw as $u) {
+        $utangByPelanggan[$u['pelanggan_id']][] = $u;
+    }
+
+    // 2D. Hitung sisa utang tiap pelanggan
     foreach ($pelangganRaw as $p) {
-        $p['sisa_utang'] = hitungSisaUtangSesi($pdoPelanggan, $p['id']);
+        $riwayat = $utangByPelanggan[$p['id']] ?? [];
+        $p['sisa_utang'] = hitungSisaUtangDariRiwayat($riwayat);
         $dataPelanggan[] = $p;
     }
+
+    // 2E. SORTING: Pelanggan dengan utang aktif di atas (urut terbesar),
+    //     setelah itu pelanggan tanpa utang (urut nama A-Z)
+    usort($dataPelanggan, function($a, $b) {
+        $aPunyaUtang = $a['sisa_utang'] > 0 ? 1 : 0;
+        $bPunyaUtang = $b['sisa_utang'] > 0 ? 1 : 0;
+
+        if ($aPunyaUtang !== $bPunyaUtang) {
+            return $bPunyaUtang - $aPunyaUtang;
+        }
+
+        if ($aPunyaUtang === 1) {
+            return $b['sisa_utang'] <=> $a['sisa_utang'];
+        }
+
+        return strcmp($a['nama'], $b['nama']);
+    });
+
 } catch (PDOException $e) {
     $errorMsg = "Gagal mengambil data pelanggan: " . $e->getMessage();
 }
 
-// Jika request dari HTMX, cukup render area_pelanggan saja
+// ============================================================
+// 3. PAGINASI DI PHP
+// ============================================================
+$page   = max(1, intval($_GET['page'] ?? 1));
+$limit  = 20;
+$offset = ($page - 1) * $limit;
+
+$totalItems = count($dataPelanggan);
+$totalPages = max(1, (int) ceil($totalItems / $limit));
+
+if ($page > $totalPages) {
+    $page   = $totalPages;
+    $offset = ($page - 1) * $limit;
+}
+
+$pelangganPage = array_slice($dataPelanggan, $offset, $limit);
+
+$pagination = [
+    'total_items'  => $totalItems,
+    'total_pages'  => $totalPages,
+    'current_page' => $page,
+    'per_page'     => $limit,
+    'from'         => $totalItems > 0 ? $offset + 1 : 0,
+    'to'           => min($offset + $limit, $totalItems),
+];
+
+// Hanya halaman ini yang dirender
+$dataPelanggan = $pelangganPage;
+
+// ============================================================
+// 4. HANDLE HTMX REQUEST
+// ============================================================
 if ($isHtmx) {
     include __DIR__ . '/_area_pelanggan.php';
     exit;

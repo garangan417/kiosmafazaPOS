@@ -7,13 +7,13 @@ require_once __DIR__ . '/../config.php';
 require_once BASE_PATH . 'database/db_barang.php';
 
 // Filter Tanggal (Default: Hari Ini)
-$tglMulai   = $_GET['tgl_mulai'] ?? date('Y-m-d');
-$tglSelesai = $_GET['tgl_selesai'] ?? date('Y-m-d');
+$tglMulai   =$_GET['tgl_mulai'] ?? date('Y-m-d');
+$tglSelesai =$_GET['tgl_selesai'] ?? date('Y-m-d');
 
 // Parameter Paginasi Tunggal
-$limit  = 20;
-$page   = (isset($_GET['page']) && (int)$_GET['page'] > 0) ? (int)$_GET['page'] : 1;
-$offset = ($page - 1) * $limit;
+$limit = 20; // Jumlah transaksi per halaman
+$page  = (isset($_GET['page']) && (int)$_GET['page'] > 0) ? (int)$_GET['page'] : 1;
+$offset = ($page - 1) *$limit;
 
 try {
     // 1. QUERY RINGKASAN UTAMA (TUNAI, QRIS, LABA, TOTAL TX)
@@ -44,23 +44,14 @@ try {
                ) r ON 1=1
                WHERE DATE(p.tanggal) BETWEEN ? AND ?";
 
-    $stmtSum = $pdoBarang->prepare($sqlSum);
-    $stmtSum->execute([$tglMulai, $tglSelesai, $tglMulai, $tglSelesai]);
-    $summary = $stmtSum->fetch(PDO::FETCH_ASSOC);
+    $stmtSum =$pdoBarang->prepare($sqlSum);$stmtSum->execute([$tglMulai,$tglSelesai, $tglMulai,$tglSelesai]);
+    $summary =$stmtSum->fetch(PDO::FETCH_ASSOC);
 
     // 2. HITUNG TOTAL TRANSAKSI UNTUK PAGINASI
-    $stmtCount = $pdoBarang->prepare("SELECT COUNT(DISTINCT p.id) FROM penjualan p WHERE DATE(p.tanggal) BETWEEN ? AND ?");
-    $stmtCount->execute([$tglMulai, $tglSelesai]);
-    $totalRows  = (int)$stmtCount->fetchColumn();
-    $totalPages = max(1, (int) ceil($totalRows / $limit));
+    $stmtCount =$pdoBarang->prepare("SELECT COUNT(id) FROM penjualan WHERE DATE(tanggal) BETWEEN ? AND ?");
+    $stmtCount->execute([$tglMulai, $tglSelesai]);$totalRows  = (int)$stmtCount->fetchColumn();$totalPages = max(1, ceil($totalRows / $limit));
 
-    // 3. CLAMP $page agar tidak melebihi total halaman
-    if ($page > $totalPages) {
-        $page = $totalPages;
-        $offset = ($page - 1) * $limit;
-    }
-
-    // 4. QUERY RIWAYAT PENJUALAN (SINGLE LIST)
+    // 3. QUERY RIWAYAT PENJUALAN (SINGLE LIST)
     $sqlList = "SELECT 
                     p.*,
                     (SELECT COUNT(id) FROM penjualan_detail WHERE penjualan_id = p.id) AS item_count,
@@ -89,23 +80,8 @@ try {
                 ORDER BY p.id DESC
                 LIMIT ? OFFSET ?";
     
-    $stmtList = $pdoBarang->prepare($sqlList);
-    $stmtList->bindValue(1, $tglMulai);
-    $stmtList->bindValue(2, $tglSelesai);
-    $stmtList->bindValue(3, $limit, PDO::PARAM_INT);
-    $stmtList->bindValue(4, $offset, PDO::PARAM_INT);
-    $stmtList->execute();
-    $transaksiList = $stmtList->fetchAll(PDO::FETCH_ASSOC);
-
-    // 5. SUSUN ARRAY $pagination UNTUK PARTIALS
-    $pagination = [
-        'total_items'  => $totalRows,
-        'total_pages'  => $totalPages,
-        'current_page' => $page,
-        'per_page'     => $limit,
-        'from'         => $totalRows > 0 ? $offset + 1 : 0,
-        'to'           => min($offset + $limit, $totalRows),
-    ];
+    $stmtList =$pdoBarang->prepare($sqlList);$stmtList->bindValue(1, $tglMulai);$stmtList->bindValue(2, $tglSelesai);$stmtList->bindValue(3, $limit, PDO::PARAM_INT);$stmtList->bindValue(4, $offset, PDO::PARAM_INT);$stmtList->execute();
+    $transaksiList =$stmtList->fetchAll(PDO::FETCH_ASSOC);
 
 } catch (PDOException $e) {
     die("Error Database: " . $e->getMessage());
@@ -209,7 +185,7 @@ require_once BASE_PATH . 'partials/header.php';
               </td>
             </tr>
           <?php else: ?>
-            <?php foreach ($transaksiList as $row): ?>
+            <?php foreach ($transaksiList as$row): ?>
               <?php $isQris = strtoupper($row['metode_bayar']) === 'QRIS'; ?>
               <tr>
                 <td>
@@ -235,6 +211,7 @@ require_once BASE_PATH . 'partials/header.php';
                   Rp <?= number_format($row['kembalian'], 0, ',', '.'); ?>
                 </td>
                 <td class="text-center">
+                  <!-- PENANDA METODE PEMBAYARAN VISUAL -->
                   <span class="badge <?= $isQris ? 'bg-info text-dark' : 'bg-secondary'; ?> fw-bold">
                     <i class="bi <?= $isQris ? 'bi-qr-code-scan' : 'bi-cash-stack'; ?> me-1"></i>
                     <?= htmlspecialchars(strtoupper($row['metode_bayar'])); ?>
@@ -252,10 +229,27 @@ require_once BASE_PATH . 'partials/header.php';
       </table>
     </div>
 
-    <!-- PAGINASI (pakai partial) -->
-    <?php if ($pagination['total_pages'] > 1): ?>
-      <div class="card-footer bg-white py-3 border-top-0">
-        <?php require BASE_PATH . 'partials/pagination.php'; ?>
+    <!-- PAGINASI TUNGGAL -->
+    <?php if ($totalPages > 1): ?>
+      <div class="card-footer bg-white d-flex justify-content-between align-items-center py-3">
+        <small class="text-muted">
+          Menampilkan Halaman <strong><?= $page; ?></strong> dari <strong><?=$totalPages; ?></strong>
+        </small>
+        <nav>
+          <ul class="pagination pagination-sm mb-0">
+            <li class="page-item <?= $page <= 1 ? 'disabled' : ''; ?>">
+              <a class="page-link" href="?tgl_mulai=<?= $tglMulai; ?>&tgl_selesai=<?= $tglSelesai; ?>&page=<?=$page - 1; ?>">&laquo; Prev</a>
+            </li>
+            <?php for ($i = 1; $i <= $totalPages; $i++): ?>
+              <li class="page-item <?= $i ===$page ? 'active' : ''; ?>">
+                <a class="page-link" href="?tgl_mulai=<?= $tglMulai; ?>&tgl_selesai=<?=$tglSelesai; ?>&page=<?= $i; ?>"><?= $i; ?></a>
+              </li>
+            <?php endfor; ?>
+            <li class="page-item <?= $page >=$totalPages ? 'disabled' : ''; ?>">
+              <a class="page-link" href="?tgl_mulai=<?= $tglMulai; ?>&tgl_selesai=<?= $tglSelesai; ?>&page=<?=$page + 1; ?>">Next &raquo;</a>
+            </li>
+          </ul>
+        </nav>
       </div>
     <?php endif; ?>
 

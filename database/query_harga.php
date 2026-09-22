@@ -120,3 +120,147 @@ if (!function_exists('getJumlahBarangBelumSetHarga')) {
         return (int) $pdo->query($sql)->fetchColumn();
     }
 }
+
+if (!function_exists('getDaftarHargaPaginated')) {
+    /**
+     * Ambil daftar harga DENGAN PAGINASI SQL.
+     * Hanya 10 baris yang diambil dari database per halaman.
+     *
+     * @param PDO    $pdo
+     * @param string $search
+     * @param int    $kategoriId
+     * @param int    $page
+     * @param int    $perPage
+     * @return array Format sama dengan paginateArray()
+     */
+    function getDaftarHargaPaginated(PDO $pdo, string $search = '', int $kategoriId = 0, int $page = 1, int $perPage = 10): array {
+        require_once __DIR__ . '/pagination_helper.php';
+
+        $params = [];
+        $whereConditions = [];
+
+        // Filter pencarian teks (nama barang / kemasan / kategori / barcode)
+        if (!empty($search)) {
+            $whereConditions[] = "(b.nama_barang LIKE ? 
+                                   OR bk.nama_kemasan LIKE ? 
+                                   OR k.nama_kategori LIKE ? 
+                                   OR bk.id IN (SELECT barang_kemasan_id FROM barang_barcode WHERE barcode LIKE ?))";
+            $searchTerm = '%' . $search . '%';
+            $params = array_merge($params, [$searchTerm, $searchTerm, $searchTerm, $searchTerm]);
+        }
+
+        // Filter kategori
+        if ($kategoriId > 0) {
+            $whereConditions[] = "b.kategori_id = ?";
+            $params[] = $kategoriId;
+        }
+
+        $whereSql = !empty($whereConditions) ? " WHERE " . implode(" AND ", $whereConditions) : "";
+
+        // Query SELECT (tanpa LIMIT)
+        $selectSql = "SELECT 
+                        bk.id AS kemasan_id,
+                        b.id AS barang_id,
+                        b.kategori_id,
+                        b.nama_barang,
+                        k.nama_kategori,
+                        bk.nama_kemasan,
+                        bk.satuan,
+                        COALESCE(bk.isi, 1) AS isi,
+                        COALESCE(h.harga_beli, 0) AS harga_beli,
+                        COALESCE(h.harga_beli_pcs, 0) AS harga_beli_pcs,
+                        COALESCE(h.harga_jual_ecer, 0) AS harga_jual_ecer,
+                        COALESCE(h.harga_jual_grosir, 0) AS harga_jual_grosir,
+                        COALESCE(h.min_qty_grosir, 1) AS min_qty_grosir,
+                        h.updated_at
+                      FROM barang_kemasan bk
+                      JOIN barang b ON bk.barang_id = b.id
+                      JOIN kategori k ON b.kategori_id = k.id
+                      LEFT JOIN harga_barang h ON bk.id = h.barang_kemasan_id
+                      {$whereSql}
+                      ORDER BY b.nama_barang ASC, bk.isi ASC";
+
+        // Query COUNT (WHERE sama)
+        $countSql = "SELECT COUNT(*) 
+                     FROM barang_kemasan bk
+                     JOIN barang b ON bk.barang_id = b.id
+                     JOIN kategori k ON b.kategori_id = k.id
+                     {$whereSql}";
+
+        return paginateSql($pdo, $selectSql, $countSql, $params, $page, $perPage);
+    }
+}
+
+if (!function_exists('getDaftarHargaUnsetPaginated')) {
+    /**
+     * Ambil daftar harga yang BELUM DI-SET (harga_jual_ecer <= 0) DENGAN PAGINASI SQL.
+     * Hanya baris yang belum di-set harganya yang diambil.
+     *
+     * @param PDO    $pdo
+     * @param string $search
+     * @param int    $kategoriId
+     * @param int    $page
+     * @param int    $perPage
+     * @return array Format sama dengan paginateSql()
+     */
+    function getDaftarHargaUnsetPaginated(PDO $pdo, string $search = '', int $kategoriId = 0, int $page = 1, int $perPage = 10): array {
+        require_once __DIR__ . '/pagination_helper.php';
+
+        $params = [];
+        $whereConditions = [];
+
+        // Filter khusus: harga ecer belum di-set (<= 0 atau NULL)
+        $whereConditions[] = "COALESCE(h.harga_jual_ecer, 0) <= 0";
+
+        // Filter pencarian teks
+        if (!empty($search)) {
+            $whereConditions[] = "(b.nama_barang LIKE ? 
+                                   OR bk.nama_kemasan LIKE ? 
+                                   OR k.nama_kategori LIKE ? 
+                                   OR bk.id IN (SELECT barang_kemasan_id FROM barang_barcode WHERE barcode LIKE ?))";
+            $searchTerm = '%' . $search . '%';
+            $params = array_merge($params, [$searchTerm, $searchTerm, $searchTerm, $searchTerm]);
+        }
+
+        // Filter kategori
+        if ($kategoriId > 0) {
+            $whereConditions[] = "b.kategori_id = ?";
+            $params[] = $kategoriId;
+        }
+
+        $whereSql = " WHERE " . implode(" AND ", $whereConditions);
+
+        // Query SELECT (tanpa LIMIT)
+        $selectSql = "SELECT 
+                        bk.id AS kemasan_id,
+                        b.id AS barang_id,
+                        b.kategori_id,
+                        b.nama_barang,
+                        k.nama_kategori,
+                        bk.nama_kemasan,
+                        bk.satuan,
+                        COALESCE(bk.isi, 1) AS isi,
+                        COALESCE(h.harga_beli, 0) AS harga_beli,
+                        COALESCE(h.harga_beli_pcs, 0) AS harga_beli_pcs,
+                        COALESCE(h.harga_jual_ecer, 0) AS harga_jual_ecer,
+                        COALESCE(h.harga_jual_grosir, 0) AS harga_jual_grosir,
+                        COALESCE(h.min_qty_grosir, 1) AS min_qty_grosir,
+                        h.updated_at
+                      FROM barang_kemasan bk
+                      JOIN barang b ON bk.barang_id = b.id
+                      JOIN kategori k ON b.kategori_id = k.id
+                      LEFT JOIN harga_barang h ON bk.id = h.barang_kemasan_id
+                      {$whereSql}
+                      ORDER BY b.nama_barang ASC, bk.isi ASC";
+
+        // Query COUNT (WHERE sama)
+        $countSql = "SELECT COUNT(*) 
+                     FROM barang_kemasan bk
+                     JOIN barang b ON bk.barang_id = b.id
+                     JOIN kategori k ON b.kategori_id = k.id
+                     LEFT JOIN harga_barang h ON bk.id = h.barang_kemasan_id
+                     {$whereSql}";
+
+        return paginateSql($pdo, $selectSql, $countSql, $params, $page, $perPage);
+    }
+}

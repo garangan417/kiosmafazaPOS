@@ -12,32 +12,6 @@ require_once __DIR__ . '/../config.php';
 require_once BASE_PATH . 'database/db_barang.php';
 require_once BASE_PATH . 'database/query_harga.php';
 
-// HELPER PAGINASI REUSABLE
-if (!function_exists('paginateArray')) {
-    function paginateArray(array $data, int $page = 1, int $perPage = 10): array {
-        $page = max(1, $page);
-        $totalItems = count($data);
-        $totalPages = (int) ceil($totalItems / $perPage);
-
-        if ($page > $totalPages && $totalPages > 0) {
-            $page = $totalPages;
-        }
-
-        $offset = ($page - 1) * $perPage;
-        $items  = array_slice($data, $offset, $perPage);
-
-        return [
-            'items'        => $items,
-            'total_items'  => $totalItems,
-            'total_pages'  => $totalPages,
-            'current_page' => $page,
-            'per_page'     => $perPage,
-            'from'         => $totalItems > 0 ? $offset + 1 : 0,
-            'to'           => min($offset + $perPage, $totalItems),
-        ];
-    }
-}
-
 // TANGKAP QUERY PENCARIAN, KATEGORI & HALAMAN DARI URL
 $search     = trim($_GET['search'] ?? '');
 $kategoriId = intval($_GET['kategori_id'] ?? 0);
@@ -51,7 +25,7 @@ function cleanCurrency($value) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
 
-    if ($action === 'save_harga') {
+    if ($action === 'save_harga_unset' || $action === 'save_harga') {
         $kemasan_id   = intval($_POST['kemasan_id'] ?? 0);
         $harga_beli   = max(0, cleanCurrency($_POST['harga_beli'] ?? '0'));
         $harga_ecer   = max(0, cleanCurrency($_POST['harga_jual_ecer'] ?? '0'));
@@ -87,16 +61,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 // AMBIL MASTER KATEGORI UNTUK DROPDOWN FILTER
 $listKategori = $pdoBarang->query("SELECT id, nama_kategori FROM kategori ORDER BY nama_kategori ASC")->fetchAll();
 
-// AMBIL DAFTAR HARGA LENGKAP
-$allHarga = getDaftarHargaLengkap($pdoBarang, $search, $kategoriId);
-
-// FILTER KHUSUS: HANYA TAMPILKAN BARANG YANG HARGA ECER-NYA MASIH 0 ATAU BELUM TERDAPAT DI HARGA_BARANG
-$unsettledHarga = array_values(array_filter($allHarga, function ($row) {
-    return floatval($row['harga_jual_ecer']) <= 0;
-}));
-
-// BUNGKUS DENGAN HELPER PAGINASI (10 item per halaman)
-$pagination  = paginateArray($unsettledHarga, $page, 10);
+// AMBIL DAFTAR HARGA YANG BELUM DI-SET DENGAN PAGINASI SQL
+$perPage     = 10;
+$pagination  = getDaftarHargaUnsetPaginated($pdoBarang, $search, $kategoriId, $page, $perPage);
 $daftarHarga = $pagination['items'];
 
 // LOAD HEADER PARTIAL ASLI
@@ -127,7 +94,7 @@ require_once BASE_PATH . 'partials/header.php';
         <!-- Counter Badge -->
         <div class="col-md-4">
           <span class="badge bg-danger fs-6 px-3 py-2">
-            Total: <?= count($unsettledHarga); ?> Kemasan Perlu Setting
+            Total: <?= $pagination['total_items']; ?> Kemasan Perlu Setting
           </span>
         </div>
 
@@ -258,7 +225,7 @@ require_once BASE_PATH . 'partials/header.php';
                     </div>
                     <form action="" method="POST">
                       <div class="modal-body">
-                        <input type="hidden" name="action" value="save_harga">
+                        <input type="hidden" name="action" value="save_harga_unset">
                         <input type="hidden" name="kemasan_id" value="<?= $row['kemasan_id']; ?>">
 
                         <div class="p-2 mb-3 bg-light rounded border">
@@ -339,44 +306,16 @@ require_once BASE_PATH . 'partials/header.php';
       </table>
     </div>
 
-    <!-- UI ELEMENT PAGINASI -->
+    <!-- PEMANGGILAN PARTIAL PAGINASI -->
     <?php if ($pagination['total_pages'] > 1): ?>
       <div class="card-footer bg-white py-3 border-top-0">
-        <div class="d-flex flex-column flex-md-row justify-content-between align-items-center gap-2">
-          <small class="text-muted">
-            Menampilkan <strong><?= $pagination['from']; ?></strong>-<strong><?= $pagination['to']; ?></strong> dari <strong><?= $pagination['total_items']; ?></strong> data
-          </small>
-
-          <nav>
-            <ul class="pagination pagination-sm mb-0">
-              <?php $queryParams = $_GET; ?>
-
-              <!-- Tombol Prev -->
-              <li class="page-item <?= ($pagination['current_page'] <= 1) ? 'disabled' : ''; ?>">
-                <?php $queryParams['page'] = $pagination['current_page'] - 1; ?>
-                <a class="page-link" href="?<?= http_build_query($queryParams); ?>">Previous</a>
-              </li>
-
-              <!-- Nomor Halaman -->
-              <?php for ($i = 1; $i <= $pagination['total_pages']; $i++): ?>
-                <?php if ($i == 1 || $i == $pagination['total_pages'] || abs($i - $pagination['current_page']) <= 1): ?>
-                  <?php $queryParams['page'] = $i; ?>
-                  <li class="page-item <?= ($i === $pagination['current_page']) ? 'active' : ''; ?>">
-                    <a class="page-link" href="?<?= http_build_query($queryParams); ?>"><?= $i; ?></a>
-                  </li>
-                <?php elseif ($i == 2 || $i == $pagination['total_pages'] - 1): ?>
-                  <li class="page-item disabled"><span class="page-link">…</span></li>
-                <?php endif; ?>
-              <?php endfor; ?>
-
-              <!-- Tombol Next -->
-              <li class="page-item <?= ($pagination['current_page'] >= $pagination['total_pages']) ? 'disabled' : ''; ?>">
-                <?php $queryParams['page'] = $pagination['current_page'] + 1; ?>
-                <a class="page-link" href="?<?= http_build_query($queryParams); ?>">Next</a>
-              </li>
-            </ul>
-          </nav>
-        </div>
+        <?php 
+          $partialPath = BASE_PATH . 'partials/pagination.php';
+          if (!file_exists($partialPath)) {
+              $partialPath = __DIR__ . '/partial/pagination.php';
+          }
+          include $partialPath; 
+        ?>
       </div>
     <?php endif; ?>
 

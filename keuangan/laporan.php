@@ -19,6 +19,7 @@ $tglAkhir = $_GET['tgl_akhir'] ?? date('Y-m-t', strtotime($today));
 $tipe     = $_GET['tipe'] ?? 'semua';
 $kategori = trim($_GET['kategori'] ?? '');
 $search   = trim($_GET['q'] ?? '');
+$page     = max(1, intval($_GET['page'] ?? 1));
 
 // Ambil Daftar Kategori Unik dari Database
 $stmtKat = $pdo->query("SELECT DISTINCT kategori FROM transaksi WHERE kategori != '' ORDER BY kategori ASC");
@@ -26,7 +27,7 @@ $listKategori = $stmtKat->fetchAll(PDO::FETCH_COLUMN);
 
 // Jika HTMX Request, Hanya Render bagian Area Laporan
 if ($isHtmx) {
-    renderMainLaporan($pdo, $tglAwal, $tglAkhir, $tipe, $kategori, $search);
+    renderMainLaporan($pdo, $tglAwal, $tglAkhir, $tipe, $kategori, $search, $page);
     exit;
 }
 
@@ -104,7 +105,7 @@ require_once BASE_PATH . 'partials/header.php';
   </div>
 
   <!-- AREA KONTEN LAPORAN -->
-  <?php renderMainLaporan($pdo, $tglAwal, $tglAkhir, $tipe, $kategori, $search); ?>
+  <?php renderMainLaporan($pdo, $tglAwal, $tglAkhir, $tipe, $kategori, $search, $page); ?>
 
 </main>
 
@@ -147,7 +148,13 @@ function setPresetDate(type) {
 /**
  * FUNGSI UTAMA UNTUK SUMMARY & TABEL LAPORAN
  */
-function renderMainLaporan($pdo, $tglAwal, $tglAkhir, $tipe, $kategori, $search) {
+function renderMainLaporan($pdo, $tglAwal, $tglAkhir, $tipe, $kategori, $search, $page = 1) {
+    // ============================================================
+    // KONFIGURASI PAGINASI
+    // ============================================================
+    $limit  = 50;
+    $offset = ($page - 1) * $limit;
+
     // 1. Ambil Saldo Kas Terakhir
     $stmtCurrentSaldo = $pdo->query("SELECT saldo_akhir FROM transaksi ORDER BY id DESC LIMIT 1");
     $currentSaldoRow  = $stmtCurrentSaldo->fetch(PDO::FETCH_ASSOC);
@@ -183,7 +190,9 @@ function renderMainLaporan($pdo, $tglAwal, $tglAkhir, $tipe, $kategori, $search)
     $totalTrx    = intval($summary['total_trx'] ?? 0);
     $selisih     = $totalMasuk - $totalKeluar;
 
-    // 3. Query Detail Tabel Transaksi
+    // ============================================================
+    // 3. QUERY DETAIL DENGAN PAGINASI
+    // ============================================================
     $sqlWhere = $sqlSummaryWhere;
     $params   = $paramSummary;
 
@@ -193,9 +202,44 @@ function renderMainLaporan($pdo, $tglAwal, $tglAkhir, $tipe, $kategori, $search)
     }
 
     $whereStr = implode(" AND ", $sqlWhere);
-    $sqlDetail = "SELECT * FROM transaksi WHERE {$whereStr} ORDER BY tanggal DESC, id DESC";
+
+    // Hitung total untuk paginasi (dengan filter yang sama, termasuk $tipe)
+    $sqlCount = "SELECT COUNT(*) FROM transaksi WHERE {$whereStr}";
+    $stmtCount = $pdo->prepare($sqlCount);
+    $stmtCount->execute($params);
+    $totalRows = (int) $stmtCount->fetchColumn();
+    $totalPages = max(1, (int) ceil($totalRows / $limit));
+
+    // Clamp page
+    if ($page > $totalPages) {
+        $page   = $totalPages;
+        $offset = ($page - 1) * $limit;
+    }
+
+    // Susun array paginasi
+    $pagination = [
+        'total_items'  => $totalRows,
+        'total_pages'  => $totalPages,
+        'current_page' => $page,
+        'per_page'     => $limit,
+        'from'         => $totalRows > 0 ? $offset + 1 : 0,
+        'to'           => min($offset + $limit, $totalRows),
+    ];
+
+    // Query detail dengan LIMIT + OFFSET
+    $sqlDetail = "SELECT * FROM transaksi WHERE {$whereStr} ORDER BY tanggal DESC, id DESC LIMIT ? OFFSET ?";
     $stmtDetail = $pdo->prepare($sqlDetail);
-    $stmtDetail->execute($params);
+
+    // Bind parameter filter
+    $bindIndex = 1;
+    foreach ($params as $p) {
+        $stmtDetail->bindValue($bindIndex++, $p);
+    }
+    // Bind LIMIT & OFFSET
+    $stmtDetail->bindValue($bindIndex++, $limit, PDO::PARAM_INT);
+    $stmtDetail->bindValue($bindIndex++, $offset, PDO::PARAM_INT);
+
+    $stmtDetail->execute();
     $transaksi = $stmtDetail->fetchAll(PDO::FETCH_ASSOC);
 ?>
   <div id="area-laporan-content">
@@ -260,7 +304,7 @@ function renderMainLaporan($pdo, $tglAwal, $tglAkhir, $tipe, $kategori, $search)
             <?php else: ?>
               <?php foreach ($transaksi as $idx => $row): ?>
                 <tr>
-                  <td class="text-muted small"><?= $idx + 1; ?></td>
+                  <td class="text-muted small"><?= $offset + $idx + 1; ?></td>
                   <td class="small fw-semibold text-dark" style="white-space: nowrap;">
                     <?= htmlspecialchars($row['tanggal']); ?>
                   </td>
@@ -285,6 +329,75 @@ function renderMainLaporan($pdo, $tglAwal, $tglAkhir, $tipe, $kategori, $search)
           </tbody>
         </table>
       </div>
+
+      <!-- PAGINASI SQL (HTMX-compatible) -->
+      <?php if ($pagination['total_pages'] > 1): ?>
+        <div class="d-flex flex-column flex-md-row justify-content-between align-items-center mt-3 gap-2">
+          <small class="text-muted">
+            Menampilkan <strong><?= $pagination['from']; ?></strong>-<strong><?= $pagination['to']; ?></strong> 
+            dari <strong><?= $pagination['total_items']; ?></strong> transaksi
+          </small>
+
+          <nav>
+            <ul class="pagination pagination-sm mb-0">
+              <?php
+              $currentPage = $pagination['current_page'];
+              $totalPages  = $pagination['total_pages'];
+
+              // Helper untuk bangun URL paginasi (dengan filter tetap)
+              $buildUrl = function($p) use ($tglAwal, $tglAkhir, $tipe, $kategori, $search) {
+                  $params = [
+                      'tgl_awal'  => $tglAwal,
+                      'tgl_akhir' => $tglAkhir,
+                      'tipe'      => $tipe,
+                      'page'      => $p,
+                  ];
+                  if (!empty($kategori)) $params['kategori'] = $kategori;
+                  if (!empty($search))   $params['q'] = $search;
+                  return BASE_URL . 'keuangan/laporan.php?' . http_build_query($params);
+              };
+              ?>
+
+              <!-- Tombol Prev -->
+              <li class="page-item <?= ($currentPage <= 1) ? 'disabled' : ''; ?>">
+                <a class="page-link" 
+                   href="<?= $buildUrl($currentPage - 1); ?>"
+                   hx-get="<?= $buildUrl($currentPage - 1); ?>"
+                   hx-target="#area-laporan-content"
+                   hx-swap="outerHTML"
+                   hx-push-url="true">Previous</a>
+              </li>
+
+              <!-- Nomor Halaman (Windowing) -->
+              <?php for ($i = 1; $i <= $totalPages; $i++): ?>
+                <?php if ($i == 1 || $i == $totalPages || abs($i - $currentPage) <= 1): ?>
+                  <li class="page-item <?= ($i === $currentPage) ? 'active' : ''; ?>">
+                    <a class="page-link" 
+                       href="<?= $buildUrl($i); ?>"
+                       hx-get="<?= $buildUrl($i); ?>"
+                       hx-target="#area-laporan-content"
+                       hx-swap="outerHTML"
+                       hx-push-url="true"><?= $i; ?></a>
+                  </li>
+                <?php elseif ($i == 2 || $i == $totalPages - 1): ?>
+                  <li class="page-item disabled"><span class="page-link">…</span></li>
+                <?php endif; ?>
+              <?php endfor; ?>
+
+              <!-- Tombol Next -->
+              <li class="page-item <?= ($currentPage >= $totalPages) ? 'disabled' : ''; ?>">
+                <a class="page-link" 
+                   href="<?= $buildUrl($currentPage + 1); ?>"
+                   hx-get="<?= $buildUrl($currentPage + 1); ?>"
+                   hx-target="#area-laporan-content"
+                   hx-swap="outerHTML"
+                   hx-push-url="true">Next</a>
+              </li>
+            </ul>
+          </nav>
+        </div>
+      <?php endif; ?>
+
     </div>
 
   </div>

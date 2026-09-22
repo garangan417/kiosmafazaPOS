@@ -11,6 +11,7 @@ require_once BASE_PATH . 'database/query_barang.php';
 $barcodeFromUrl = isset($_GET['barcode']) ? trim($_GET['barcode']) : '';
 $searchQuery    = isset($_GET['q']) ? trim($_GET['q']) : '';
 $kategoriId     = isset($_GET['kategori_id']) ? intval($_GET['kategori_id']) : 0;
+$page           = isset($_GET['page']) ? max(1, intval($_GET['page'])) : 1;
 
 // PROSES POST
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -180,7 +181,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!empty($barcodeFromUrl)) $queryParams['barcode'] = $barcodeFromUrl;
     if (!empty($searchQuery)) $queryParams['q'] = $searchQuery;
     if ($kategoriId > 0) $queryParams['kategori_id'] = $kategoriId;
-    if (isset($_GET['page'])) $queryParams['page'] = intval($_GET['page']);
+    if ($page > 1) $queryParams['page'] = $page;
 
     $queryString = !empty($queryParams) ? '?' . http_build_query($queryParams) : '';
     header("Location: " . $_SERVER['PHP_SELF'] . $queryString);
@@ -190,45 +191,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 // AMBIL DATA KATEGORI UNTUK DROPDOWN
 $listKategori = $pdoBarang->query("SELECT * FROM kategori ORDER BY nama_kategori ASC")->fetchAll();
 
-// AMBIL SEMUA DAFTAR BARANG
-$allBarang = getDaftarBarangLengkap($pdoBarang);
+// AMBIL DAFTAR BARANG DENGAN PAGINASI SQL (hanya 15 baris per halaman)
+$perPage    = 15;
+$pagination = getDaftarBarangPaginated($pdoBarang, $searchQuery, $kategoriId, $page, $perPage);
+$daftarBarang = $pagination['items'];
 
-// FITUR PENCARIAN & FILTER KATEGORI
-if (!empty($searchQuery) || $kategoriId > 0) {
-    $searchLower = mb_strtolower($searchQuery);
-    
-    $allBarang = array_filter($allBarang, function ($item) use ($searchLower, $kategoriId) {
-        // Filter Berdasarkan Kategori
-        $matchKategori = ($kategoriId === 0) || (isset($item['kategori_id']) && (int)$item['kategori_id'] === $kategoriId);
-
-        // Filter Berdasarkan Teks Pencarian
-        $matchText = true;
-        if (!empty($searchLower)) {
-            $namaBarang  = mb_strtolower($item['nama_barang'] ?? '');
-            $namaKemasan = mb_strtolower($item['nama_kemasan'] ?? '');
-            $listBarcode = mb_strtolower($item['list_barcode'] ?? '');
-
-            $matchText = str_contains($namaBarang, $searchLower)
-                      || str_contains($namaKemasan, $searchLower)
-                      || str_contains($listBarcode, $searchLower);
-        }
-
-        return $matchKategori && $matchText;
-    });
-
-    // Re-index array setelah difilter
-    $allBarang = array_values($allBarang);
-}
-
-// LOGIKA PAGINASI
-$totalItems   = count($allBarang);
-$limit        = 15; // Jumlah item per halaman
-$totalPages   = max(1, ceil($totalItems / $limit));
-$currentPage  = max(1, min($totalPages, intval($_GET['page'] ?? 1)));
-$offset       = ($currentPage - 1) * $limit;
-
-// Potong data array sesuai halaman saat ini
-$daftarBarang = array_slice($allBarang, $offset, $limit);
+// Variabel untuk kompatibilitas dengan HTML di bawah
+$totalItems   = $pagination['total_items'];
+$totalPages   = $pagination['total_pages'];
+$currentPage  = $pagination['current_page'];
+$offset       = ($currentPage - 1) * $perPage;
+$limit        = $perPage;
 
 // Helper Query String untuk Pagination Link
 $buildPageUrl = function ($page) use ($searchQuery, $barcodeFromUrl, $kategoriId) {
@@ -385,7 +358,17 @@ require_once BASE_PATH . 'partials/header.php';
                   </td>
                 </tr>
               <?php else: ?>
-                <?php foreach ($daftarBarang as $row): ?>
+                <?php 
+                // TRACKER: Menyimpan ID barang yang modalnya sudah dirender
+                // agar modal berbasis barang_id tidak duplikat saat 1 barang punya banyak kemasan
+                $renderedBarangIds = [];
+                
+                foreach ($daftarBarang as $row): 
+                    $isBarangBaru = !in_array($row['barang_id'], $renderedBarangIds);
+                    if ($isBarangBaru) {
+                        $renderedBarangIds[] = $row['barang_id'];
+                    }
+                ?>
                   <tr>
                     <td>
                       <strong class="text-dark d-block"><?= htmlspecialchars($row['nama_barang']); ?></strong>
@@ -405,7 +388,7 @@ require_once BASE_PATH . 'partials/header.php';
                       <?php endif; ?>
                     </td>
                     <td class="text-center">
-                      <!-- 1. Tombol Tambah Barcode -->
+                      <!-- 1. Tombol Tambah Barcode (per kemasan) -->
                       <button class="btn btn-sm btn-outline-secondary mb-1" 
                               data-bs-toggle="modal" 
                               data-bs-target="#modalBarcode<?= $row['kemasan_id']; ?>" 
@@ -413,13 +396,15 @@ require_once BASE_PATH . 'partials/header.php';
                         <i class="bi bi-qr-code-scan"></i>
                       </button>
 
-                      <!-- 2. Tombol Tambah Varian Kemasan -->
-                      <button class="btn btn-sm btn-outline-primary mb-1" 
-                              data-bs-toggle="modal" 
-                              data-bs-target="#modalKemasan<?= $row['barang_id']; ?>" 
-                              title="Tambah Varian Kemasan Baru">
-                        <i class="bi bi-box-arrow-in-down"></i>
-                      </button>
+                      <!-- 2. Tombol Tambah Varian Kemasan (hanya di baris pertama per barang) -->
+                      <?php if ($isBarangBaru): ?>
+                        <button class="btn btn-sm btn-outline-primary mb-1" 
+                                data-bs-toggle="modal" 
+                                data-bs-target="#modalKemasan<?= $row['barang_id']; ?>" 
+                                title="Tambah Varian Kemasan Baru">
+                          <i class="bi bi-box-arrow-in-down"></i>
+                        </button>
+                      <?php endif; ?>
 
                       <!-- 3. Dropdown Menu Edit & Hapus -->
                       <div class="dropdown d-inline-block mb-1">
@@ -427,13 +412,15 @@ require_once BASE_PATH . 'partials/header.php';
                           <i class="bi bi-pencil-square"></i>
                         </button>
                         <ul class="dropdown-menu dropdown-menu-end shadow-sm small">
-                          <li>
-                            <button class="dropdown-item text-dark" 
-                                    data-bs-toggle="modal" 
-                                    data-bs-target="#modalEditBarang<?= $row['barang_id']; ?>">
-                              <i class="bi bi-pencil me-2 text-warning"></i>Edit Produk & Kategori
-                            </button>
-                          </li>
+                          <?php if ($isBarangBaru): ?>
+                            <li>
+                              <button class="dropdown-item text-dark" 
+                                      data-bs-toggle="modal" 
+                                      data-bs-target="#modalEditBarang<?= $row['barang_id']; ?>">
+                                <i class="bi bi-pencil me-2 text-warning"></i>Edit Produk & Kategori
+                              </button>
+                            </li>
+                          <?php endif; ?>
                           <li>
                             <button class="dropdown-item text-dark" 
                                     data-bs-toggle="modal" 
@@ -449,19 +436,22 @@ require_once BASE_PATH . 'partials/header.php';
                               <i class="bi bi-x-circle me-2"></i>Hapus Kemasan Ini
                             </button>
                           </li>
-                          <li>
-                            <button class="dropdown-item text-danger fw-bold" 
-                                    data-bs-toggle="modal" 
-                                    data-bs-target="#modalDelBarang<?= $row['barang_id']; ?>">
-                              <i class="bi bi-trash-fill me-2"></i>Hapus Master Produk
-                            </button>
-                          </li>
+                          <?php if ($isBarangBaru): ?>
+                            <li>
+                              <button class="dropdown-item text-danger fw-bold" 
+                                      data-bs-toggle="modal" 
+                                      data-bs-target="#modalDelBarang<?= $row['barang_id']; ?>">
+                                <i class="bi bi-trash-fill me-2"></i>Hapus Master Produk
+                              </button>
+                            </li>
+                          <?php endif; ?>
                         </ul>
                       </div>
                     </td>
                   </tr>
 
-                  <!-- MODAL EDIT MASTER PRODUK & KATEGORI -->
+                  <?php if ($isBarangBaru): ?>
+                  <!-- MODAL EDIT MASTER PRODUK & KATEGORI (hanya dirender sekali per barang) -->
                   <div class="modal fade" id="modalEditBarang<?= $row['barang_id']; ?>" tabindex="-1">
                     <div class="modal-dialog modal-dialog-centered">
                       <div class="modal-content">
@@ -499,8 +489,9 @@ require_once BASE_PATH . 'partials/header.php';
                       </div>
                     </div>
                   </div>
+                  <?php endif; ?>
 
-                  <!-- MODAL EDIT KEMASAN INI -->
+                  <!-- MODAL EDIT KEMASAN INI (per kemasan, aman) -->
                   <div class="modal fade" id="modalEditKemasan<?= $row['kemasan_id']; ?>" tabindex="-1">
                     <div class="modal-dialog modal-dialog-centered">
                       <div class="modal-content">
@@ -538,7 +529,7 @@ require_once BASE_PATH . 'partials/header.php';
                     </div>
                   </div>
 
-                  <!-- MODAL TAMBAH BARCODE -->
+                  <!-- MODAL TAMBAH BARCODE (per kemasan, aman) -->
                   <div class="modal fade" id="modalBarcode<?= $row['kemasan_id']; ?>" tabindex="-1">
                     <div class="modal-dialog modal-dialog-centered modal-sm">
                       <div class="modal-content">
@@ -561,7 +552,8 @@ require_once BASE_PATH . 'partials/header.php';
                     </div>
                   </div>
 
-                  <!-- MODAL TAMBAH KEMASAN/VARIAN -->
+                  <?php if ($isBarangBaru): ?>
+                  <!-- MODAL TAMBAH KEMASAN/VARIAN (hanya dirender sekali per barang) -->
                   <div class="modal fade" id="modalKemasan<?= $row['barang_id']; ?>" tabindex="-1">
                     <div class="modal-dialog modal-dialog-centered">
                       <div class="modal-content">
@@ -603,8 +595,9 @@ require_once BASE_PATH . 'partials/header.php';
                       </div>
                     </div>
                   </div>
+                  <?php endif; ?>
 
-                  <!-- MODAL HAPUS KEMASAN INI -->
+                  <!-- MODAL HAPUS KEMASAN INI (per kemasan, aman) -->
                   <div class="modal fade" id="modalDelKemasan<?= $row['kemasan_id']; ?>" tabindex="-1">
                     <div class="modal-dialog modal-dialog-centered modal-sm">
                       <div class="modal-content">
@@ -627,7 +620,8 @@ require_once BASE_PATH . 'partials/header.php';
                     </div>
                   </div>
 
-                  <!-- MODAL HAPUS MASTER PRODUK -->
+                  <?php if ($isBarangBaru): ?>
+                  <!-- MODAL HAPUS MASTER PRODUK (hanya dirender sekali per barang) -->
                   <div class="modal fade" id="modalDelBarang<?= $row['barang_id']; ?>" tabindex="-1">
                     <div class="modal-dialog modal-dialog-centered modal-sm">
                       <div class="modal-content">
@@ -649,6 +643,7 @@ require_once BASE_PATH . 'partials/header.php';
                       </div>
                     </div>
                   </div>
+                  <?php endif; ?>
 
                 <?php endforeach; ?>
               <?php endif; ?>
@@ -673,9 +668,8 @@ require_once BASE_PATH . 'partials/header.php';
 
                 <!-- Angka Halaman dengan Limit Windowing -->
                 <?php
-                $range = 2; // Menampilkan 2 halaman di kiri & 2 halaman di kanan dari halaman aktif
+                $range = 2;
 
-                // Halaman Pertama selalu muncul
                 if ($currentPage > ($range + 1)) {
                     echo '<li class="page-item"><a class="page-link" href="' . $buildPageUrl(1) . '">1</a></li>';
                     if ($currentPage > ($range + 2)) {
@@ -683,7 +677,6 @@ require_once BASE_PATH . 'partials/header.php';
                     }
                 }
 
-                // Halaman di sekitar halaman aktif
                 $start = max(1, $currentPage - $range);
                 $end   = min($totalPages, $currentPage + $range);
 
@@ -696,7 +689,6 @@ require_once BASE_PATH . 'partials/header.php';
                 <?php endfor; ?>
 
                 <?php
-                // Halaman Terakhir selalu muncul
                 if ($currentPage < ($totalPages - $range)) {
                     if ($currentPage < ($totalPages - $range - 1)) {
                         echo '<li class="page-item disabled"><span class="page-link">&hellip;</span></li>';
@@ -721,32 +713,6 @@ require_once BASE_PATH . 'partials/header.php';
 
   </div>
 </main>
-<script src="/assets/js/sweetalert2.all.min.min.js"></script>
 
-<script>
-  const Toast = Swal.mixin({
-    toast: true,
-    position: 'top-end',
-    showConfirmButton: false,
-    timer: 3000,
-    timerProgressBar: true
-  });
-
-  <?php if (isset($_SESSION['toast_success'])): ?>
-    Toast.fire({
-      icon: 'success',
-      title: '<?= htmlspecialchars($_SESSION['toast_success']); ?>'
-    });
-    <?php unset($_SESSION['toast_success']); ?>
-  <?php endif; ?>
-
-  <?php if (isset($_SESSION['toast_error'])): ?>
-    Toast.fire({
-      icon: 'error',
-      title: '<?= htmlspecialchars($_SESSION['toast_error']); ?>'
-    });
-    <?php unset($_SESSION['toast_error']); ?>
-  <?php endif; ?>
-</script>
 
 <?php require_once BASE_PATH . 'partials/footer.php'; ?>

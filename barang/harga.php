@@ -3,35 +3,13 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
+// DEBUG SEMENTARA — hapus 2 baris ini setelah paginasi berhasil
+error_reporting(E_ALL);
+ini_set('display_errors', '1');
+
 require_once __DIR__ . '/../config.php';
 require_once BASE_PATH . 'database/db_barang.php';
 require_once BASE_PATH . 'database/query_harga.php';
-
-// HELPER PAGINASI REUSABLE
-if (!function_exists('paginateArray')) {
-    function paginateArray(array $data, int $page = 1, int $perPage = 10): array {
-        $page = max(1, $page);
-        $totalItems = count($data);
-        $totalPages = (int) ceil($totalItems / $perPage);
-
-        if ($page > $totalPages && $totalPages > 0) {
-            $page = $totalPages;
-        }
-
-        $offset = ($page - 1) * $perPage;
-        $items  = array_slice($data, $offset, $perPage);
-
-        return [
-            'items'        => $items,
-            'total_items'  => $totalItems,
-            'total_pages'  => $totalPages,
-            'current_page' => $page,
-            'per_page'     => $perPage,
-            'from'         => $totalItems > 0 ? $offset + 1 : 0,
-            'to'           => min($offset + $perPage, $totalItems),
-        ];
-    }
-}
 
 // TANGKAP QUERY PENCARIAN, KATEGORI & HALAMAN DARI URL
 $search     = trim($_GET['search'] ?? '');
@@ -82,19 +60,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 // AMBIL MASTER KATEGORI UNTUK DROPDOWN FILTER
 $listKategori = $pdoBarang->query("SELECT id, nama_kategori FROM kategori ORDER BY nama_kategori ASC")->fetchAll();
 
-// AMBIL DAFTAR HARGA BARANG (SESUAI SEARCH)
-$allDaftarHarga = getDaftarHargaLengkap($pdoBarang, $search);
-
-// FILTER KATEGORI DI SISI PHP JIKA DIPILIH
-if ($kategoriId > 0 && !empty($allDaftarHarga)) {
-    $allDaftarHarga = array_values(array_filter($allDaftarHarga, function ($row) use ($kategoriId) {
-        return isset($row['kategori_id']) && intval($row['kategori_id']) === $kategoriId;
-    }));
-}
-
-// BUNGKUS DENGAN HELPER PAGINASI (Default 10 item per halaman)
-$pagination  = paginateArray($allDaftarHarga, $page, 10);
+// AMBIL DAFTAR HARGA BARANG DENGAN PAGINASI SQL (hanya 10 baris per halaman)
+$pagination  = getDaftarHargaPaginated($pdoBarang, $search, $kategoriId, $page, 10);
 $daftarHarga = $pagination['items'];
+
+
 
 require_once BASE_PATH . 'partials/header.php';
 ?>
@@ -108,7 +78,6 @@ require_once BASE_PATH . 'partials/header.php';
         <!-- Judul -->
         <div class="col-md-5">
           <h5 class="card-title mb-0 fw-bold text-dark"><i class="bi bi-tags-fill me-2 text-primary"></i>Kelola Harga Barang</h5>
-          
         </div>
 
         <!-- Form Filter Kategori & Pencarian Nama / Barcode -->
