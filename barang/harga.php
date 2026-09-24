@@ -348,13 +348,13 @@ require_once BASE_PATH . 'partials/header.php';
   </div>
 </main>
 
-<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
 <script>
   const Toast = Swal.mixin({
     toast: true,
     position: 'top-end',
     showConfirmButton: false,
-    timer: 3000,
+    timer: 1000,
     timerProgressBar: true
   });
 

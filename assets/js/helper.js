@@ -279,7 +279,7 @@ function processSearch(q) {
 
                 if (res.is_barcode || res.data.length === 1) {
                     addToCart(res.data[0]);
-                    clearScan();
+                    clearScan(); // Auto-clear saat barang langsung ketemu
                 } else {
                     showSearchDropdown(res.data);
                 }
@@ -290,6 +290,9 @@ function processSearch(q) {
 
                 document.getElementById('notFoundBarcode').innerText =
                     scannedBarcode;
+
+                // 🟢 KOSONGKAN INPUT SAAT BARCODE TIDAK DITEMUKAN
+                document.getElementById('inputScan').value = '';
 
                 let modalNF = new bootstrap.Modal(
                     document.getElementById('modalNotFound')
@@ -646,22 +649,26 @@ function clearCart() {
 // ==========================================
 
 function clearScan() {
+    const inputScan = document.getElementById('inputScan');
+    if (inputScan) {
+        inputScan.value = '';
+    }
 
-    document.getElementById('inputScan').value =
-        '';
-
-    document.getElementById('searchResult').style.display =
-        'none';
+    const searchResult = document.getElementById('searchResult');
+    if (searchResult) {
+        searchResult.style.display = 'none';
+    }
 
     resetFocusScan();
 }
 
-
 function resetFocusScan() {
-
     setTimeout(() => {
-        document.getElementById('inputScan').focus();
-    }, 300);
+        const inputScan = document.getElementById('inputScan');
+        if (inputScan) {
+            inputScan.focus();
+        }
+    }, 100);
 }
 
 

@@ -236,32 +236,6 @@ $current_page = $_SERVER['REQUEST_URI'];
   </div>
 </header>
 
-<script>
-document.addEventListener("DOMContentLoaded", function() {
-  let serverTime = <?= floor(microtime(true) * 1000); ?>;
 
-  function updateClock() {
-    serverTime += 1000;
-    let d = new Date(serverTime);
 
-    let hh = String(d.getHours()).padStart(2, '0');
-    let mm = String(d.getMinutes()).padStart(2, '0');
-    let ss = String(d.getSeconds()).padStart(2, '0');
-    
-    let day = String(d.getDate()).padStart(2, '0');
-    let month = String(d.getMonth() + 1).padStart(2, '0');
-    let year = d.getFullYear();
-
-    let clockTimeElem = document.getElementById('server-clock-time');
-    let clockDateElem = document.getElementById('server-clock-date');
-
-    if (clockTimeElem) clockTimeElem.innerText = `${hh}:${mm}:${ss}`;
-    if (clockDateElem) clockDateElem.innerText = `${day}/${month}/${year}`;
-  }
-
-  updateClock();
-  setInterval(updateClock, 1000);
-});
-</script>
-<script src="/assets/js/html5-qrcode.min.js"></script>
 <script src="/assets/js/sweetalert2.all.min.min.js"></script>
