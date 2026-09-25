@@ -741,7 +741,7 @@ function hitungKembalian() {
     } else {
 
         elem.className =
-            'fw-bold fs-5 text-success';
+            'fw-bold fs-5 text-dark';
     }
 }
 
@@ -1539,5 +1539,119 @@ function prosesCheckout() {
                 'Checkout error:',
                 err
             );
+        });
+}
+
+
+// ==========================================
+// TAMBAH PELANGGAN BARU (DARI KASIR)
+// ==========================================
+// ⚠️ Path fetch 'api_tambah_pelanggan.php' & 'api_search_pelanggan.php'
+//    relatif terhadap HALAMAN (kasir/index.php), bukan lokasi file JS ini.
+//    Pastikan file API ada di folder kasir/.
+
+/**
+ * Buka modal tambah pelanggan baru
+ */
+function openModalTambahPelanggan() {
+    // Reset form
+    document.getElementById('formTambahPelangganKasir').reset();
+    document.getElementById('alertTambahPelanggan').innerHTML = '';
+
+    let modal = new bootstrap.Modal(document.getElementById('modalTambahPelanggan'));
+    modal.show();
+
+    // Focus ke input nama
+    setTimeout(() => {
+        document.getElementById('newPelangganNama').focus();
+    }, 300);
+}
+
+
+/**
+ * Simpan pelanggan baru via AJAX
+ */
+function simpanPelangganBaru() {
+    let nama   = document.getElementById('newPelangganNama').value.trim();
+    let no_hp  = document.getElementById('newPelangganHp').value.trim();
+    let alamat = document.getElementById('newPelangganAlamat').value.trim();
+
+    if (!nama) {
+        document.getElementById('alertTambahPelanggan').innerHTML =
+            '<div class="alert alert-danger py-2 small">Nama pelanggan wajib diisi!</div>';
+        return;
+    }
+
+    let btn = document.getElementById('btnSimpanPelanggan');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Menyimpan...';
+
+    // Kirim ke API (relatif dari kasir/index.php)
+    let formData = new FormData();
+    formData.append('nama', nama);
+    formData.append('no_hp', no_hp);
+    formData.append('alamat', alamat);
+
+    fetch('api_tambah_pelanggan.php', {
+        method: 'POST',
+        body: formData
+    })
+    .then(res => res.json())
+    .then(res => {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-save me-1"></i> Simpan & Pilih Pelanggan';
+
+        if (res.status === 'success') {
+            // Tutup modal
+            let modal = bootstrap.Modal.getInstance(document.getElementById('modalTambahPelanggan'));
+            if (modal) modal.hide();
+
+            // Reload daftar pelanggan & auto-select yang baru
+            loadPelangganListDanPilih(res.data.id);
+
+        } else {
+            document.getElementById('alertTambahPelanggan').innerHTML =
+                '<div class="alert alert-danger py-2 small">' +
+                (res.message || 'Gagal menyimpan') + '</div>';
+        }
+    })
+    .catch(err => {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-save me-1"></i> Simpan & Pilih Pelanggan';
+        document.getElementById('alertTambahPelanggan').innerHTML =
+            '<div class="alert alert-danger py-2 small">Terjadi kesalahan koneksi.</div>';
+        console.error('Error simpan pelanggan:', err);
+    });
+}
+
+
+/**
+ * Load ulang daftar pelanggan dan auto-select ID tertentu
+ */
+function loadPelangganListDanPilih(selectedId) {
+    fetch('api_search_pelanggan.php')
+        .then(res => res.json())
+        .then(res => {
+            let select = document.getElementById('selectPelanggan');
+            select.innerHTML = '<option value="">-- Pilih Pelanggan --</option>';
+
+            if (res.status === 'success' && res.data.length > 0) {
+                res.data.forEach(p => {
+                    let opt = document.createElement('option');
+                    opt.value = p.id;
+                    opt.textContent = p.nama + (p.no_hp ? ' (' + p.no_hp + ')' : '');
+
+                    if (String(p.id) === String(selectedId)) {
+                        opt.selected = true;
+                    }
+                    select.appendChild(opt);
+                });
+            }
+
+            // Fokus kembali ke input scan setelah selesai
+            resetFocusScan();
+        })
+        .catch(err => {
+            console.error('Error load pelanggan:', err);
         });
 }

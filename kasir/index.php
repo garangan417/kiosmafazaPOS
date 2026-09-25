@@ -190,6 +190,7 @@ style="z-index: 1050; display: none;">
 
 <!-- KOLOM KANAN: RINGKASAN & PEMBAYARAN -->
 <div class="col-lg-5">
+
 <!-- BARANG FAVORIT / QUICK BUTTONS -->
 <div class="card border-0 shadow-sm mb-3">
 <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center">
@@ -247,9 +248,20 @@ Belum ada barang favorit. Klik <strong>Kelola Favorit</strong> untuk menambahkan
 <!-- INPUT KHUSUS PELANGGAN (Hanya tampil jika Metode = UTANG) -->
 <div class="mb-3 p-2 border border-warning rounded bg-warning-subtle" id="boxPelangganUtang" style="display: none;">
 <label class="form-label fw-bold small text-dark"><i class="bi bi-person-fill me-1"></i> Pilih Pelanggan (Utang/Bon)</label>
-<select id="selectPelanggan" class="form-select form-select-sm">
+<!-- <select id="selectPelanggan" class="form-select form-select-sm">
 <option value="">-- Pilih Pelanggan --</option>
-</select>
+</select> -->
+<div class="input-group input-group-sm">
+    <select id="selectPelanggan" class="form-select form-select-sm">
+        <option value="">-- Pilih Pelanggan --</option>
+    </select>
+    <button type="button" class="btn btn-warning fw-bold"
+            onclick="openModalTambahPelanggan()"
+            title="Tambah Pelanggan Baru">
+        <i class="bi bi-person-plus-fill"></i> Baru
+    </button>
+</div>
+
 </div>
 
 <div class="mb-3">
@@ -263,9 +275,9 @@ Belum ada barang favorit. Klik <strong>Kelola Favorit</strong> untuk menambahkan
 </div>
 </div>
 
-<div class="d-flex justify-content-between align-items-center mb-3 p-2 bg-light rounded font-monospace">
-<span class="fw-bold">Kembalian:</span>
-<span class="fw-bold fs-5 text-success" id="displayKembalian">Rp 0</span>
+<div class="d-flex gap-2 align-items-center mb-3 p-2 bg-light rounded font-monospace">
+<span class="fw-bold text-dark">Kembalian:</span>
+<span class="fw-bold fs-4 text-dark"  id="displayKembalian">Rp 0</span>
 </div>
 
 </div>
@@ -507,6 +519,51 @@ Belum ada barang favorit. Klik <strong>Kelola Favorit</strong> untuk menambahkan
 </div>
 </div>
 </div>
+</div>
+
+<!-- ========================================== -->
+<!-- MODAL TAMBAH PELANGGAN BARU (dari Kasir)   -->
+<!-- ========================================== -->
+<div class="modal fade" id="modalTambahPelanggan" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header bg-warning text-dark py-2">
+                <h6 class="modal-title fw-bold">
+                    <i class="bi bi-person-plus-fill me-2"></i>Tambah Pelanggan Baru
+                </h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" onclick="resetFocusScan()"></button>
+            </div>
+
+            <div class="modal-body p-3">
+                <form id="formTambahPelangganKasir" onsubmit="event.preventDefault(); simpanPelangganBaru();">
+
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold">Nama Lengkap <span class="text-danger">*</span></label>
+                        <input type="text" id="newPelangganNama" class="form-control"
+                               placeholder="Contoh: Budi Santoso" required autocomplete="off">
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold">No. HP / WhatsApp (Opsional)</label>
+                        <input type="text" id="newPelangganHp" class="form-control font-monospace"
+                               placeholder="0812xxxxxxx" autocomplete="off">
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold">Alamat / Catatan (Opsional)</label>
+                        <textarea id="newPelangganAlamat" class="form-control" rows="2"
+                                  placeholder="Catatan singkat..."></textarea>
+                    </div>
+
+                    <div id="alertTambahPelanggan"></div>
+
+                    <button type="submit" id="btnSimpanPelanggan" class="btn btn-warning w-100 fw-bold">
+                        <i class="bi bi-save me-1"></i> Simpan & Pilih Pelanggan
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
 </div>
 
 <!-- ============================================================ -->

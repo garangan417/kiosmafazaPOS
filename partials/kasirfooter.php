@@ -31,12 +31,15 @@ onclick="openKelolaFavorit()">
 <div class="d-flex align-items-center gap-2 flex-shrink-0">
 
 <!-- TAMPILAN TOTAL PEMBAYARAN -->
-<div class="bg-dark text-white px-3 py-1 rounded text-end border border-secondary">
-<small class="text-uppercase fw-semibold opacity-75 d-block"
-style="font-size: 0.7rem; line-height: 1;">
-Total
-</small>
-<span class="fs-5 fs-md-4 fw-bold font-monospace text-warning"
+<div class="bg-dark text-white px-3 py-1 rounded border border-secondary d-flex align-items-right gap-2">
+  <small class="text-uppercase fw-semibold opacity-75" style="font-size: 1rem; fw-bold line-height: 1;">
+    Total         :
+  </small> 
+  <span class="fs-2 fs-md-2  font-monospace text-light" id="displayTotal">
+    Rp 0
+  </span>
+</div>
+<span class="fs-2 fs-md-2  font-monospace text-light"
 id="displayTotal">Rp 0</span>
 </div>
 
