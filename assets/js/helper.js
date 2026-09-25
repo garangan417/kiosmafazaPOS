@@ -1655,3 +1655,254 @@ function loadPelangganListDanPilih(selectedId) {
             console.error('Error load pelanggan:', err);
         });
 }
+
+
+// ==========================================
+// MODAL DAFTAR PELANGGAN UTANG AKTIF
+// ==========================================
+
+let currentSisaUtangKasir = 0;
+let debounceUtangTimer = null;
+
+/**
+ * Buka modal daftar pelanggan utang
+ */
+function openModalDaftarUtang() {
+    // Reset search
+    document.getElementById('inputSearchUtang').value = '';
+
+    // Tampilkan modal
+    let modal = new bootstrap.Modal(document.getElementById('modalDaftarUtang'));
+    modal.show();
+
+    // Load data awal
+    loadDaftarUtang('');
+}
+
+
+/**
+ * Debounce search biar tidak spam request
+ */
+function debounceCariUtang(val) {
+    clearTimeout(debounceUtangTimer);
+    debounceUtangTimer = setTimeout(() => {
+        loadDaftarUtang(val);
+    }, 400);
+}
+
+
+/**
+ * Load daftar pelanggan utang dari API
+ */
+function loadDaftarUtang(q) {
+    let loading = document.getElementById('utangLoading');
+    let tbody = document.getElementById('utangListBody');
+
+    // Tampilkan loading
+    loading.style.display = 'block';
+    tbody.innerHTML = '';
+
+    fetch('api_utang_aktif.php?q=' + encodeURIComponent(q))
+        .then(res => res.json())
+        .then(res => {
+            loading.style.display = 'none';
+
+            if (res.status !== 'success') {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="4" class="text-center text-danger py-3">
+                            Gagal memuat data: ${res.message || 'Error'}
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
+            // Update summary
+            document.getElementById('utangTotalCount').innerText = res.total_count;
+            document.getElementById('utangGrandTotal').innerText = res.grand_format;
+
+            // Render tabel
+            if (res.data.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="4" class="text-center text-muted py-4">
+                            <i class="bi bi-inbox fs-3 d-block mb-2"></i>
+                            Tidak ada pelanggan dengan utang aktif.
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
+            let html = '';
+            res.data.forEach(p => {
+                html += `
+                    <tr>
+                        <td>
+                            <strong class="text-dark">${escapeHtml(p.nama)}</strong>
+                        </td>
+                        <td>
+                            ${p.no_hp ? '<a href="https://wa.me/' + p.no_hp.replace(/[^0-9]/g, '') + '" target="_blank" class="text-decoration-none text-success"><i class="bi bi-whatsapp me-1"></i>' + escapeHtml(p.no_hp) + '</a>' : '<span class="text-muted">-</span>'}
+                        </td>
+                        <td class="text-end">
+                            <span class="badge bg-danger fs-6 font-monospace">${p.sisa_format}</span>
+                        </td>
+                        <td class="text-center">
+                            <button type="button"
+                                    class="btn btn-sm btn-success fw-bold"
+                                    onclick="openModalBayarUtang(${p.id}, '${escapeHtml(p.nama).replace(/'/g, "\\'")}', ${p.sisa_utang})">
+                                <i class="bi bi-cash-coin"></i> Bayar
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            });
+
+            tbody.innerHTML = html;
+        })
+        .catch(err => {
+            loading.style.display = 'none';
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="4" class="text-center text-danger py-3">
+                        Terjadi kesalahan koneksi.
+                    </td>
+                </tr>
+            `;
+            console.error('Error load daftar utang:', err);
+        });
+}
+
+
+/**
+ * Buka modal bayar utang
+ */
+function openModalBayarUtang(id, nama, sisaUtang) {
+    document.getElementById('bayarUtangPelangganId').value = id;
+    document.getElementById('bayarUtangNama').innerText = nama;
+    document.getElementById('bayarUtangSisa').innerText = 'Rp ' + Math.round(sisaUtang).toLocaleString('id-ID');
+    document.getElementById('bayarUtangNominal').value = '';
+    document.getElementById('bayarUtangKeterangan').value = '';
+    document.getElementById('alertBayarUtang').innerHTML = '';
+
+    currentSisaUtangKasir = sisaUtang;
+
+    // Sembunyikan modal daftar, tampilkan modal bayar
+    let modalDaftar = bootstrap.Modal.getInstance(document.getElementById('modalDaftarUtang'));
+    if (modalDaftar) modalDaftar.hide();
+
+    let modalBayar = new bootstrap.Modal(document.getElementById('modalBayarUtang'));
+    modalBayar.show();
+
+    // Focus ke input nominal
+    setTimeout(() => {
+        document.getElementById('bayarUtangNominal').focus();
+    }, 400);
+}
+
+
+/**
+ * Set nominal bayar dari tombol cepat
+ */
+function setBayarUtangNominal(val) {
+    let input = document.getElementById('bayarUtangNominal');
+    input.value = new Intl.NumberFormat('id-ID').format(val);
+    input.focus();
+}
+
+
+/**
+ * Set nominal = sisa utang (uang pas)
+ */
+function setBayarUtangPas() {
+    let input = document.getElementById('bayarUtangNominal');
+    input.value = new Intl.NumberFormat('id-ID').format(Math.round(currentSisaUtangKasir));
+    input.focus();
+}
+
+
+/**
+ * Submit pembayaran utang
+ */
+function submitBayarUtang() {
+    let pelangganId = document.getElementById('bayarUtangPelangganId').value;
+    let nominalRaw  = document.getElementById('bayarUtangNominal').value.replace(/\./g, '');
+    let nominal     = parseFloat(nominalRaw) || 0;
+    let keterangan  = document.getElementById('bayarUtangKeterangan').value.trim();
+
+    // Validasi
+    if (nominal <= 0) {
+        document.getElementById('alertBayarUtang').innerHTML =
+            '<div class="alert alert-danger py-2 small mb-0">Nominal harus lebih dari 0!</div>';
+        return;
+    }
+
+    if (nominal > currentSisaUtangKasir) {
+        document.getElementById('alertBayarUtang').innerHTML =
+            '<div class="alert alert-danger py-2 small mb-0">Nominal melebihi sisa utang!</div>';
+        return;
+    }
+
+    // Disable button sementara
+    let btnSubmit = document.querySelector('#modalBayarUtang .btn-success');
+    let originalHtml = btnSubmit.innerHTML;
+    btnSubmit.disabled = true;
+    btnSubmit.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Menyimpan...';
+
+    // Set tanggal sekarang
+    let now = new Date();
+    let yyyy = now.getFullYear();
+    let mm = String(now.getMonth() + 1).padStart(2, '0');
+    let dd = String(now.getDate()).padStart(2, '0');
+    let hh = String(now.getHours()).padStart(2, '0');
+    let ii = String(now.getMinutes()).padStart(2, '0');
+    let ss = String(now.getSeconds()).padStart(2, '0');
+    let tanggal = `${yyyy}-${mm}-${dd} ${hh}:${ii}:${ss}`;
+
+    // Kirim
+    let formData = new FormData();
+    formData.append('pelanggan_id', pelangganId);
+    formData.append('nominal', nominal);
+    formData.append('keterangan', keterangan);
+    formData.append('tanggal', tanggal);
+
+    fetch('api_bayar_utang.php', {
+        method: 'POST',
+        body: formData
+    })
+    .then(res => res.json())
+    .then(res => {
+        btnSubmit.disabled = false;
+        btnSubmit.innerHTML = originalHtml;
+
+        if (res.status === 'success') {
+            // Tutup modal bayar
+            let modalBayar = bootstrap.Modal.getInstance(document.getElementById('modalBayarUtang'));
+            if (modalBayar) modalBayar.hide();
+
+            // Alert seperti di halaman pelanggan
+            alert(res.message);
+
+            // Buka kembali modal daftar + refresh
+            let modalDaftar = new bootstrap.Modal(document.getElementById('modalDaftarUtang'));
+            modalDaftar.show();
+
+            // Reload data
+            setTimeout(() => {
+                loadDaftarUtang(document.getElementById('inputSearchUtang').value);
+            }, 300);
+
+        } else {
+            document.getElementById('alertBayarUtang').innerHTML =
+                '<div class="alert alert-danger py-2 small mb-0">' + (res.message || 'Gagal menyimpan') + '</div>';
+        }
+    })
+    .catch(err => {
+        btnSubmit.disabled = false;
+        btnSubmit.innerHTML = originalHtml;
+        document.getElementById('alertBayarUtang').innerHTML =
+            '<div class="alert alert-danger py-2 small mb-0">Terjadi kesalahan koneksi.</div>';
+        console.error('Error bayar utang:', err);
+    });
+}
