@@ -150,7 +150,7 @@ try {
         $saldoTerakhir = $lastRow ? floatval($lastRow['saldo_akhir']) : 0;
 
         $saldoAkhirBaru = $saldoTerakhir + $totalNominalPpob;
-        $tglKas = date('Y-m-d', strtotime($createdAt));
+        $tglKas = $createdAt;
         $ketPpobText = !empty($rincianPpobText) ? " (" . implode(', ', $rincianPpobText) . ")" : "";
         $ketKas = "Hasil Penjualan PPOB/Jasa [#{$noFaktur}]{$ketPpobText}";
 

@@ -306,6 +306,7 @@ Belum ada barang favorit. Klik <strong>Kelola Favorit</strong> untuk menambahkan
 <option value="Topup E-Wallet">Topup E-Wallet</option>
 <option value="Pulsa & Data">Pulsa & Data</option>
 <option value="Token PLN">Token PLN</option>
+<option value="Paket Parabola">Paket Parabola</option>
 <option value="Lain-lain">Lain-lain</option>
 </select>
 </div>

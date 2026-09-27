@@ -250,7 +250,7 @@ require_once BASE_PATH . 'partials/header.php';
           <!-- INPUT TANGGAL (NILAI DISET VIA JAVASCRIPT BROWSER) -->
           <div class="mb-3">
             <label class="form-label small fw-semibold">Tanggal</label>
-            <input type="date" id="inputTanggal" name="tanggal" class="form-control" required>
+            <input type="text" id="inputTanggal" name="tanggal" class="form-control bg-light" readonly required>
           </div>
 
           <div class="mb-3">
@@ -272,7 +272,7 @@ require_once BASE_PATH . 'partials/header.php';
                      required 
                      autocomplete="off">
             </div>
-            <div class="form-text text-muted">Titik otomatis muncul saat mengetik agar nol tidak tertukar.</div>
+           
           </div>
 
           <div class="mb-3">
@@ -301,16 +301,21 @@ require_once BASE_PATH . 'partials/header.php';
 
 <script>
   // Set tanggal otomatis dari Browser (Client-side)
-  function setBrowserDate() {
-    const today = new Date();
-    const yyyy = today.getFullYear();
-    const mm = String(today.getMonth() + 1).padStart(2, '0');
-    const dd = String(today.getDate()).padStart(2, '0');
+function setBrowserDate() {
+    const now = new Date();
+    const yyyy = now.getFullYear();
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const dd = String(now.getDate()).padStart(2, '0');
+    const hh = String(now.getHours()).padStart(2, '0');
+    const ii = String(now.getMinutes()).padStart(2, '0');
+    const ss = String(now.getSeconds()).padStart(2, '0');
+
     const inputTanggal = document.getElementById('inputTanggal');
     if (inputTanggal) {
-      inputTanggal.value = `${yyyy}-${mm}-${dd}`;
+        // Set nilai lengkap: tanggal + jam
+        inputTanggal.value = `${yyyy}-${mm}-${dd} ${hh}:${ii}:${ss}`;
     }
-  }
+}
 
   // Jalankan saat halaman pertama kali selesai di-load
   document.addEventListener("DOMContentLoaded", function() {
