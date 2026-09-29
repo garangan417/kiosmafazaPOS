@@ -61,8 +61,7 @@ onclick="openKelolaFavorit()">
     Rp 0
   </span>
 </div>
-<span class="fs-2 fs-md-2  font-monospace text-light"
-id="displayTotal">Rp 0</span>
+
 </div>
 
 <!-- SIMPAN & PROSES -->
@@ -81,6 +80,9 @@ disabled>
 </div>
 </div>
 </footer>
+
+<!-- Bootstrap JS -->
+<script src="/assets/js/bootstrap.bundle.min.js"></script>
 
 <script>
 // ==========================================
@@ -147,11 +149,8 @@ document.addEventListener("DOMContentLoaded", function() {
 <script src="/assets/js/helper.js?v=<?= filemtime('assets/js/helper.js'); ?>"></script>
 
 
-<!-- Helper.js dengan cache busting -->
-<script src="/assets/js/helper.js?v=<?= filemtime('assets/js/helper.js'); ?>"></script>
 
-<!-- Bootstrap JS -->
-<script src="/assets/js/bootstrap.bundle.min.js"></script>
+
 
 </body>
 </html>
