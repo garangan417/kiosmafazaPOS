@@ -9,10 +9,10 @@ $q = trim($_GET['q'] ?? '');
 
 try {
     if (!empty($q)) {
-        $stmt = $pdoPelanggan->prepare("SELECT id, nama, no_hp FROM pelanggan WHERE nama LIKE ? OR no_hp LIKE ? ORDER BY nama ASC LIMIT 10");
+        $stmt = $pdoPelanggan->prepare("SELECT id, nama, no_hp FROM pelanggan WHERE nama LIKE ? OR no_hp LIKE ? ORDER BY nama ASC LIMIT 20");
         $stmt->execute(["%$q%", "%$q%"]);
     } else {
-        $stmt = $pdoPelanggan->query("SELECT id, nama, no_hp FROM pelanggan ORDER BY nama ASC LIMIT 20");
+        $stmt = $pdoPelanggan->query("SELECT id, nama, no_hp FROM pelanggan ORDER BY nama ASC LIMIT 30");
     }
     $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
     echo json_encode(['status' => 'success', 'data' => $data]);

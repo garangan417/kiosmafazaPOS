@@ -136,14 +136,17 @@ require_once BASE_PATH . 'partials/header.php';
 <div class="card border-0 shadow-sm mb-3">
 <div class="card-body p-3">
 <div class="d-flex justify-content-between align-items-center mb-1">
-<label class="form-label fw-bold mb-0">
-<i class="bi bi-upc-scan text-primary me-1"></i> Cari / Scan Barcode Barang
-</label>
+
 <!-- TOMBOL UNTUK MEMBUKA MODAL TRANSAKSI JASA / PPOB -->
 <button type="button" class="btn btn-sm btn-outline-success fw-bold" onclick="openModalJasa()">
 <i class="bi bi-plus-circle me-1"></i> Transaksi Jasa / PPOB
 </button>
 </div>
+
+<!-- ============================================================ -->
+<!-- WRAPPER position-relative UNTUK DROPDOWN (FIX POSISI)         -->
+<!-- ============================================================ -->
+<div style="position: relative;">
 <div class="input-group input-group-lg mt-2">
 <input type="text" id="inputScan" class="form-control font-monospace" placeholder="Scan Barcode atau ketik nama barang..." autofocus autocomplete="off">
 <!-- TOMBOL KAMERA KHUSUS MOBILE / TABLET -->
@@ -160,6 +163,11 @@ require_once BASE_PATH . 'partials/header.php';
 class="search-dropdown position-absolute w-100 mt-1"
 style="z-index: 1050; display: none;">
 </div>
+</div>
+<!-- ============================================================ -->
+<!-- END WRAPPER                                                    -->
+<!-- ============================================================ -->
+
 </div>
 </div>
 
@@ -238,7 +246,7 @@ Belum ada barang favorit. Klik <strong>Kelola Favorit</strong> untuk menambahkan
 <div class="card-body p-3">
 <div class="mb-3">
 <label class="form-label fw-bold small">Metode Pembayaran</label>
-<select id="metodeBayar" class="form-select" onchange="toggleFormUtang()">
+<select id="metodeBayar" class="form-select" onchange="toggleFormUtang()" >
 <option value="TUNAI" selected>TUNAI</option>
 <option value="QRIS">QRIS</option>
 <option value="UTANG">UTANG / BON</option>
@@ -248,20 +256,53 @@ Belum ada barang favorit. Klik <strong>Kelola Favorit</strong> untuk menambahkan
 <!-- INPUT KHUSUS PELANGGAN (Hanya tampil jika Metode = UTANG) -->
 <div class="mb-3 p-2 border border-warning rounded bg-warning-subtle" id="boxPelangganUtang" style="display: none;">
 <label class="form-label fw-bold small text-dark"><i class="bi bi-person-fill me-1"></i> Pilih Pelanggan (Utang/Bon)</label>
-<!-- <select id="selectPelanggan" class="form-select form-select-sm">
-<option value="">-- Pilih Pelanggan --</option>
-</select> -->
 <div class="input-group input-group-sm">
-    <select id="selectPelanggan" class="form-select form-select-sm">
-        <option value="">-- Pilih Pelanggan --</option>
-    </select>
-    <button type="button" class="btn btn-warning fw-bold"
-            onclick="openModalTambahPelanggan()"
-            title="Tambah Pelanggan Baru">
-        <i class="bi bi-person-plus-fill"></i> Baru
-    </button>
+
+<!-- Dropdown Bootstrap custom -->
+<div class="dropdown dropup flex-grow-1" id="dropdownPelangganWrapper">
+<button class="btn btn-outline-secondary btn-sm w-100 text-start d-flex justify-content-between align-items-center"
+type="button"
+id="btnPilihPelanggan"
+data-bs-toggle="dropdown"
+data-bs-auto-close="outside"
+aria-expanded="false"
+style="background:#fff;">
+<span id="labelPelangganTerpilih" class="text-truncate">-- Pilih Pelanggan --</span>
+<i class="bi bi-chevron-down ms-2"></i>
+</button>
+
+<ul class="dropdown-menu dropdown-menu-end w-100 shadow"
+id="dropdownPelangganMenu"
+aria-labelledby="btnPilihPelanggan">
+
+<!-- Search box - tidak ikut scroll -->
+<li class="px-2 py-1 border-bottom bg-white">
+<input type="text"
+id="inputCariPelanggan"
+class="form-control form-control-sm"
+placeholder="Cari nama pelanggan..."
+autocomplete="off">
+</li>
+
+<!-- List pelanggan - max 5 baris sebelum scroll -->
+<div id="pelangganListContainer"
+style="max-height: 260px; overflow-y: auto;">
+<span class="dropdown-item-text text-muted small text-center d-block py-3">
+<span class="spinner-border spinner-border-sm me-2"></span>Memuat...
+</span>
+</div>
+</ul>
 </div>
 
+<button type="button" class="btn btn-warning fw-bold"
+onclick="openModalTambahPelanggan()"
+title="Tambah Pelanggan Baru">
+<i class="bi bi-person-plus-fill"></i> Baru
+</button>
+</div>
+
+<!-- Hidden input untuk simpan pelanggan_id yang dipilih -->
+<input type="hidden" id="selectPelanggan" value="">
 </div>
 
 <div class="mb-3">
@@ -277,7 +318,7 @@ Belum ada barang favorit. Klik <strong>Kelola Favorit</strong> untuk menambahkan
 
 <div class="d-flex gap-2 align-items-center mb-3 p-2 bg-light rounded font-monospace">
 <span class="fw-bold text-dark">Kembalian:</span>
-<span class="fw-bold fs-4 text-dark"  id="displayKembalian">Rp 0</span>
+<span class="fw-bold fs-4 text-dark" id="displayKembalian">Rp 0</span>
 </div>
 
 </div>
@@ -338,7 +379,7 @@ Belum ada barang favorit. Klik <strong>Kelola Favorit</strong> untuk menambahkan
 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" onclick="stopCameraScanner()"></button>
 </div>
 <div class="modal-body p-3 text-center">
-<div id="reader" style="width: 100%; min-height: 250px; background: #f8f9fa; rounded: 8px;"></div>
+<div id="reader" style="width: 100%; min-height: 250px; background: #f8f9fa; border-radius: 8px;"></div>
 <small class="text-muted d-block mt-2">Arahkan kamera ke barcode barang</small>
 </div>
 <div class="modal-footer py-2 bg-light">
@@ -526,45 +567,45 @@ Belum ada barang favorit. Klik <strong>Kelola Favorit</strong> untuk menambahkan
 <!-- MODAL TAMBAH PELANGGAN BARU (dari Kasir)   -->
 <!-- ========================================== -->
 <div class="modal fade" id="modalTambahPelanggan" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content border-0 shadow">
-            <div class="modal-header bg-warning text-dark py-2">
-                <h6 class="modal-title fw-bold">
-                    <i class="bi bi-person-plus-fill me-2"></i>Tambah Pelanggan Baru
-                </h6>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" onclick="resetFocusScan()"></button>
-            </div>
+<div class="modal-dialog modal-dialog-centered">
+<div class="modal-content border-0 shadow">
+<div class="modal-header bg-warning text-dark py-2">
+<h6 class="modal-title fw-bold">
+<i class="bi bi-person-plus-fill me-2"></i>Tambah Pelanggan Baru
+</h6>
+<button type="button" class="btn-close" data-bs-dismiss="modal" onclick="resetFocusScan()"></button>
+</div>
 
-            <div class="modal-body p-3">
-                <form id="formTambahPelangganKasir" onsubmit="event.preventDefault(); simpanPelangganBaru();">
+<div class="modal-body p-3">
+<form id="formTambahPelangganKasir" onsubmit="event.preventDefault(); simpanPelangganBaru();">
 
-                    <div class="mb-3">
-                        <label class="form-label small fw-bold">Nama Lengkap <span class="text-danger">*</span></label>
-                        <input type="text" id="newPelangganNama" class="form-control"
-                               placeholder="Contoh: Budi Santoso" required autocomplete="off">
-                    </div>
+<div class="mb-3">
+<label class="form-label small fw-bold">Nama Lengkap <span class="text-danger">*</span></label>
+<input type="text" id="newPelangganNama" class="form-control"
+placeholder="Contoh: Budi Santoso" required autocomplete="off">
+</div>
 
-                    <div class="mb-3">
-                        <label class="form-label small fw-bold">No. HP / WhatsApp (Opsional)</label>
-                        <input type="text" id="newPelangganHp" class="form-control font-monospace"
-                               placeholder="0812xxxxxxx" autocomplete="off">
-                    </div>
+<div class="mb-3">
+<label class="form-label small fw-bold">No. HP / WhatsApp (Opsional)</label>
+<input type="text" id="newPelangganHp" class="form-control font-monospace"
+placeholder="0812xxxxxxx" autocomplete="off">
+</div>
 
-                    <div class="mb-3">
-                        <label class="form-label small fw-bold">Alamat / Catatan (Opsional)</label>
-                        <textarea id="newPelangganAlamat" class="form-control" rows="2"
-                                  placeholder="Catatan singkat..."></textarea>
-                    </div>
+<div class="mb-3">
+<label class="form-label small fw-bold">Alamat / Catatan (Opsional)</label>
+<textarea id="newPelangganAlamat" class="form-control" rows="2"
+placeholder="Catatan singkat..."></textarea>
+</div>
 
-                    <div id="alertTambahPelanggan"></div>
+<div id="alertTambahPelanggan"></div>
 
-                    <button type="submit" id="btnSimpanPelanggan" class="btn btn-warning w-100 fw-bold">
-                        <i class="bi bi-save me-1"></i> Simpan & Pilih Pelanggan
-                    </button>
-                </form>
-            </div>
-        </div>
-    </div>
+<button type="submit" id="btnSimpanPelanggan" class="btn btn-warning w-100 fw-bold">
+<i class="bi bi-save me-1"></i> Simpan & Pilih Pelanggan
+</button>
+</form>
+</div>
+</div>
+</div>
 </div>
 
 <!-- ============================================================ -->
@@ -573,37 +614,8 @@ Belum ada barang favorit. Klik <strong>Kelola Favorit</strong> untuk menambahkan
 <script>
 window.STOK_AKTIF = <?= $stokAktif ? 'true' : 'false'; ?>;
 </script>
-<!-- Buka dengan tag <script> -->
-<script>
-document.addEventListener("DOMContentLoaded", function() {
-  const tableFavorit = document.getElementById('tableFavorit');
-
-  if (tableFavorit) {
-    // 1 Listener untuk seluruh baris tabel
-    tableFavorit.addEventListener('click', function(e) {
-      // Cari elemen TR terdekat yang diklik
-      const row = e.target.closest('.item-favorit-row');
-
-      if (row && row.dataset.barang) {
-        try {
-          // Parse JSON dari atribut data-barang
-          const itemData = JSON.parse(row.dataset.barang);
-
-          // Panggil fungsi tambah ke keranjang
-          addToCart(itemData);
-        } catch (err) {
-          console.error("Gagal parse data barang favorit:", err);
-        }
-      }
-    });
-  }
-});
-</script> <!-- Tutup tag </script> di sini -->
 
 <!-- File JS Eksternal -->
-<script src="/assets/js/html5-qrcode.min.js"></script>
-
-
 <script src="/assets/js/html5-qrcode.min.js"></script>
 
 <?php require_once BASE_PATH . 'partials/kasirfooter.php'; ?>

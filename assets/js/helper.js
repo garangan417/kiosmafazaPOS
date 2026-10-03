@@ -1,34 +1,126 @@
+// ==========================================
+// GLOBAL STATE
+// ==========================================
 let cart = [];
 let scannedBarcode = '';
 let isFavoritChanged = false;
 let html5QrCode = null;
 let currentSearchResults = [];
 
+// State untuk debounce & abort live search
+let searchTimer = null;
+let searchAbort = null;
+
+// State untuk modal utang
+let currentSisaUtangKasir = 0;
+let debounceUtangTimer = null;
+
+// State untuk daftar pelanggan (dropdown pelanggan)
+let daftarPelangganGlobal = [];
+
+
+// ==========================================
+// INIT
+// ==========================================
 document.addEventListener("DOMContentLoaded", function() {
     const inputScan = document.getElementById('inputScan');
 
     // ⚠️ PENTING: Cek dulu apakah elemen ada (halaman kasir saja)
-    // Halaman harga.php, index.php, dll. TIDAK punya #inputScan
     if (!inputScan) {
         // Bukan halaman kasir, skip semua logic kasir
         return;
     }
 
-    // Event handler Scan / Search
-    inputScan.addEventListener('keyup', function(e) {
+    // ==========================================
+    // EVENT HANDLER: SCAN / SEARCH (keydown)
+    // ==========================================
+    inputScan.addEventListener('keydown', function(e) {
         let q = this.value.trim();
 
+        // Enter → proses (barcode atau nama)
         if (e.key === 'Enter' && q.length > 0) {
-            processSearch(q);
-        } else if (q.length > 2) {
-            liveSearchNama(q);
-        } else {
+            e.preventDefault();
+
+            clearTimeout(searchTimer);
+            if (searchAbort) {
+                searchAbort.abort();
+                searchAbort = null;
+            }
+
+            const isBarcodeFormat = /^\d{6,}$/.test(q);
+            if (isBarcodeFormat) {
+                processSearch(q);
+            } else {
+                liveSearchNama(q);
+            }
+            return;
+        }
+
+        if (e.key === 'Escape') {
             document.getElementById('searchResult').style.display = 'none';
+            return;
+        }
+
+        // Skip tombol navigasi & modifier
+        if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Tab', 'Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) {
+            return;
+        }
+
+        if (searchAbort) {
+            searchAbort.abort();
+            searchAbort = null;
+        }
+        clearTimeout(searchTimer);
+
+        if (q.length <= 2) {
+            document.getElementById('searchResult').style.display = 'none';
+            return;
+        }
+
+        searchTimer = setTimeout(() => {
+            liveSearchNama(q);
+        }, 300);
+    });
+
+    // ==========================================
+    // KLIK DI LUAR → TUTUP DROPDOWN BARANG
+    // ==========================================
+    document.addEventListener('click', function(e) {
+        const sr = document.getElementById('searchResult');
+        const input = document.getElementById('inputScan');
+        if (!sr || !input) return;
+
+        if (!e.target.closest('#searchResult') && e.target !== input) {
+            sr.style.display = 'none';
         }
     });
 
-    // Load awal daftar pelanggan
+    // ==========================================
+    // LOAD AWAL PELANGGAN
+    // ==========================================
     loadPelangganList();
+
+    // ==========================================
+    // EVENT LISTENER: SEARCH BOX PELANGGAN
+    // ==========================================
+    const inputCariPelanggan = document.getElementById('inputCariPelanggan');
+    if (inputCariPelanggan) {
+        inputCariPelanggan.addEventListener('input', function() {
+            filterPelangganDropdown(this.value);
+        });
+    }
+
+    // Reset search & fokus otomatis saat dropdown dibuka
+    const btnPilihPelanggan = document.getElementById('btnPilihPelanggan');
+    if (btnPilihPelanggan) {
+        btnPilihPelanggan.addEventListener('shown.bs.dropdown', function() {
+            if (inputCariPelanggan) {
+                inputCariPelanggan.value = '';
+                inputCariPelanggan.focus();
+            }
+            renderPelangganDropdown(daftarPelangganGlobal);
+        });
+    }
 });
 
 
@@ -36,27 +128,19 @@ document.addEventListener("DOMContentLoaded", function() {
 // HELPER / UTILITY
 // ==========================================
 
-// Helper JavaScript untuk penentuan harga grosir berdasarkan Qty
 function hitungHargaTieringJS(item, qty) {
     let hargaEcer   = parseFloat(item.harga_ecer || item.harga_jual || 0);
     let hargaGrosir = parseFloat(item.harga_grosir || 0);
     let minGrosir   = parseInt(item.min_qty_grosir || 0);
 
     if (hargaGrosir > 0 && minGrosir > 0 && qty >= minGrosir) {
-        return {
-            harga_jual: hargaGrosir,
-            jenis_harga: 'GROSIR'
-        };
+        return { harga_jual: hargaGrosir, jenis_harga: 'GROSIR' };
     }
 
-    return {
-        harga_jual: hargaEcer,
-        jenis_harga: 'ECER'
-    };
+    return { harga_jual: hargaEcer, jenis_harga: 'ECER' };
 }
 
 
-// Helper JavaScript untuk format ribuan live saat mengetik di input text
 function formatInputRupiahJS(input) {
     let value = input.value.replace(/\D/g, '');
 
@@ -72,11 +156,11 @@ function escapeHtml(text) {
     if (!text) return '';
 
     return text.toString()
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#039;");
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
 }
 
 
@@ -84,7 +168,6 @@ function escapeHtml(text) {
 // PELANGGAN & METODE PEMBAYARAN
 // ==========================================
 
-// Handler Dropdown UTANG / BON & TRANSFER
 function toggleFormUtang() {
     let metode = document.getElementById('metodeBayar').value;
     let boxPelanggan = document.getElementById('boxPelangganUtang');
@@ -95,33 +178,107 @@ function toggleFormUtang() {
         boxPelanggan.style.display = 'none';
     }
 
-    // Jika TRANSFER/QRIS, otomatis set Uang Pas
     if (metode === 'TRANSFER') {
         setNominalBayar('PAS');
     }
 }
 
 
+// ==========================================
+// PELANGGAN — BOOTSTRAP DROPDOWN CUSTOM
+// ==========================================
+
 function loadPelangganList() {
     fetch('api_search_pelanggan.php')
-        .then(res => res.json())
-        .then(res => {
-            let select = document.getElementById('selectPelanggan');
+    .then(res => res.json())
+    .then(res => {
+        daftarPelangganGlobal = (res.status === 'success' && Array.isArray(res.data))
+        ? res.data
+        : [];
+        renderPelangganDropdown(daftarPelangganGlobal);
+    })
+    .catch(err => {
+        console.error('loadPelangganList error:', err);
+        renderPelangganDropdown([]);
+    });
+}
 
-            select.innerHTML =
-                '<option value="">-- Pilih Pelanggan --</option>';
 
-            if (res.status === 'success' && res.data.length > 0) {
-                res.data.forEach(p => {
-                    select.innerHTML += `
-                        <option value="${p.id}">
-                            ${escapeHtml(p.nama)}
-                            ${p.no_hp ? '(' + escapeHtml(p.no_hp) + ')' : ''}
-                        </option>
-                    `;
-                });
-            }
-        });
+function renderPelangganDropdown(list) {
+    const container = document.getElementById('pelangganListContainer');
+    if (!container) return;
+
+    if (!list || list.length === 0) {
+        container.innerHTML = `
+        <span class="dropdown-item-text text-muted small text-center d-block py-3">
+        Tidak ada pelanggan.
+        </span>
+        `;
+        return;
+    }
+
+    let html = '';
+    list.forEach(p => {
+        const namaEsc = escapeHtml(p.nama);
+        const hpEsc   = p.no_hp ? escapeHtml(p.no_hp) : '';
+
+        html += `
+        <a class="dropdown-item d-flex justify-content-between align-items-center py-2"
+        href="#"
+        onclick="pilihPelanggan(${p.id}, '${namaEsc.replace(/'/g, "\\'")}'); return false;">
+        <div style="min-width:0;">
+        <div class="fw-semibold text-truncate">${namaEsc}</div>
+        ${hpEsc ? `<small class="text-muted">${hpEsc}</small>` : ''}
+        </div>
+        <i class="bi bi-check2 text-success d-none check-icon-${p.id}"></i>
+        </a>
+        `;
+    });
+
+    container.innerHTML = html;
+}
+
+
+function pilihPelanggan(id, nama) {
+    // Simpan ke hidden input
+    const hiddenInput = document.getElementById('selectPelanggan');
+    if (hiddenInput) hiddenInput.value = id;
+
+    // Update label button
+    const label = document.getElementById('labelPelangganTerpilih');
+    if (label) label.textContent = nama;
+
+    // Tandai item yang dipilih
+    document.querySelectorAll('[class*="check-icon-"]').forEach(el => {
+        el.classList.add('d-none');
+    });
+    const checkIcon = document.querySelector('.check-icon-' + id);
+    if (checkIcon) checkIcon.classList.remove('d-none');
+
+    // Tutup dropdown
+    const btn = document.getElementById('btnPilihPelanggan');
+    if (btn) {
+        const dd = bootstrap.Dropdown.getInstance(btn);
+        if (dd) dd.hide();
+    }
+}
+
+
+function filterPelangganDropdown(keyword) {
+    const q = (keyword || '').toLowerCase().trim();
+
+    if (!q) {
+        renderPelangganDropdown(daftarPelangganGlobal);
+        return;
+    }
+
+    const filtered = daftarPelangganGlobal.filter(p => {
+        const nama = (p.nama || '').toLowerCase();
+        const hp   = (p.no_hp || '').toLowerCase();
+        return nama.includes(q) || hp.includes(q);
+    });
+
+    renderPelangganDropdown(filtered);
 }
 
 
@@ -141,16 +298,9 @@ function openModalJasa() {
 
 
 function tambahJasaKeKeranjang() {
-    let kategori =
-        document.getElementById('jasaKategori').value;
-
-    let keterangan =
-        document.getElementById('jasaKeterangan').value.trim();
-
-    // Clean karakter titik pemisah ribuan sebelum parsing nominal
-    let rawNominal =
-        document.getElementById('jasaNominal').value.replace(/\./g, '');
-
+    let kategori = document.getElementById('jasaKategori').value;
+    let keterangan = document.getElementById('jasaKeterangan').value.trim();
+    let rawNominal = document.getElementById('jasaNominal').value.replace(/\./g, '');
     let nominal = parseFloat(rawNominal) || 0;
 
     if (nominal <= 0) {
@@ -161,21 +311,17 @@ function tambahJasaKeKeranjang() {
     let itemJasa = {
         tipe: 'JASA',
         kemasan_id: null,
-
         nama_barang: `[${kategori}] ${keterangan}`,
         nama_kemasan: kategori,
         satuan: 'trx',
-
         harga_beli: 0,
         harga_jual: nominal,
         harga_ecer: nominal,
         harga_grosir: 0,
         min_qty_grosir: 0,
         jenis_harga: 'ECER',
-
         qty: 1,
         subtotal: nominal,
-
         is_jasa: true,
         kategori: kategori,
         keterangan: keterangan
@@ -183,15 +329,11 @@ function tambahJasaKeKeranjang() {
 
     addToCart(itemJasa);
 
-    let modalElem =
-        document.getElementById('modalTransaksiJasa');
+    let modalJasa = bootstrap.Modal.getInstance(
+        document.getElementById('modalTransaksiJasa')
+    );
 
-    let modalJasa =
-        bootstrap.Modal.getInstance(modalElem);
-
-    if (modalJasa) {
-        modalJasa.hide();
-    }
+    if (modalJasa) modalJasa.hide();
 
     resetFocusScan();
 }
@@ -213,13 +355,7 @@ function openCameraScanner() {
             html5QrCode = new Html5Qrcode("reader");
         }
 
-        const config = {
-            fps: 10,
-            qrbox: {
-                width: 250,
-                height: 150
-            }
-        };
+        const config = { fps: 10, qrbox: { width: 250, height: 150 } };
 
         html5QrCode.start(
             { facingMode: "environment" },
@@ -237,18 +373,13 @@ function openCameraScanner() {
 function onScanSuccess(decodedText, decodedResult) {
     stopCameraScanner();
 
-    let modalCamElem =
-        document.getElementById('modalCameraScanner');
+    let modalCam = bootstrap.Modal.getInstance(
+        document.getElementById('modalCameraScanner')
+    );
 
-    let modalCam =
-        bootstrap.Modal.getInstance(modalCamElem);
-
-    if (modalCam) {
-        modalCam.hide();
-    }
+    if (modalCam) modalCam.hide();
 
     document.getElementById('inputScan').value = decodedText;
-
     processSearch(decodedText);
 }
 
@@ -256,11 +387,11 @@ function onScanSuccess(decodedText, decodedResult) {
 function stopCameraScanner() {
     if (html5QrCode && html5QrCode.isScanning) {
         html5QrCode.stop()
-            .then(() => {
-                html5QrCode.clear();
-                resetFocusScan();
-            })
-            .catch(err => console.error(err));
+        .then(() => {
+            html5QrCode.clear();
+            resetFocusScan();
+        })
+        .catch(err => console.error(err));
     }
 }
 
@@ -269,54 +400,56 @@ function stopCameraScanner() {
 // PENCARIAN BARANG
 // ==========================================
 
-// Proses pencarian utama (Scan Exact atau Enter)
 function processSearch(q) {
     fetch('api_search.php?q=' + encodeURIComponent(q))
-        .then(res => res.json())
-        .then(res => {
-
-            if (res.status === 'success' && res.data.length > 0) {
-
-                if (res.is_barcode || res.data.length === 1) {
-                    addToCart(res.data[0]);
-                    clearScan(); // Auto-clear saat barang langsung ketemu
-                } else {
-                    showSearchDropdown(res.data);
-                }
-
+    .then(res => res.json())
+    .then(res => {
+        if (res.status === 'success' && res.data.length > 0) {
+            if (res.is_barcode || res.data.length === 1) {
+                addToCart(res.data[0]);
+                clearScan();
             } else {
-
-                scannedBarcode = q;
-
-                document.getElementById('notFoundBarcode').innerText =
-                    scannedBarcode;
-
-                // 🟢 KOSONGKAN INPUT SAAT BARCODE TIDAK DITEMUKAN
-                document.getElementById('inputScan').value = '';
-
-                let modalNF = new bootstrap.Modal(
-                    document.getElementById('modalNotFound')
-                );
-
-                modalNF.show();
+                showSearchDropdown(res.data);
             }
-        });
+        } else {
+            scannedBarcode = q;
+            document.getElementById('notFoundBarcode').innerText = scannedBarcode;
+            document.getElementById('inputScan').value = '';
+
+            let modalNF = new bootstrap.Modal(
+                document.getElementById('modalNotFound')
+            );
+            modalNF.show();
+        }
+    })
+    .catch(err => console.error('processSearch error:', err));
 }
 
 
-// Live Search Dropdown Nama Barang
 function liveSearchNama(q) {
-    fetch('api_search.php?q=' + encodeURIComponent(q))
-        .then(res => res.json())
-        .then(res => {
+    if (searchAbort) {
+        searchAbort.abort();
+    }
+    searchAbort = new AbortController();
 
-            if (res.status === 'success' && res.data.length > 0) {
-                showSearchDropdown(res.data);
-            } else {
-                document.getElementById('searchResult').style.display =
-                    'none';
-            }
-        });
+    fetch('api_search.php?q=' + encodeURIComponent(q), {
+        signal: searchAbort.signal
+    })
+    .then(res => res.json())
+    .then(res => {
+        if (res.status === 'success' && res.data.length > 0) {
+            showSearchDropdown(res.data);
+        } else if (res.status === 'too_short' || res.status === 'empty') {
+            document.getElementById('searchResult').style.display = 'none';
+        } else {
+            showEmptyDropdown(q);
+        }
+    })
+    .catch(err => {
+        if (err.name !== 'AbortError') {
+            console.error('liveSearchNama error:', err);
+        }
+    });
 }
 
 
@@ -325,37 +458,67 @@ function showSearchDropdown(data) {
 
     let html = '';
 
+    html += `
+    <div class="dropdown-header-custom">
+    <span><i class="bi bi-search me-1"></i> ${data.length} hasil ditemukan</span>
+    <button type="button"
+    class="btn-close btn-close-sm"
+    onclick="hideSearchDropdown()"
+    aria-label="Tutup"></button>
+    </div>
+    `;
+
     data.forEach((item, index) => {
-        // Ambil satuan jika ada, jika tidak ada baru gunakan nama_kemasan
         let teksSatuan = item.satuan ? item.satuan : item.nama_kemasan;
+        let harga = Math.round(item.harga_ecer || item.harga_jual || 0);
 
         html += `
-            <a href="#"
-               class="list-group-item list-group-item-action d-flex justify-content-between align-items-center p-2"
-               onclick="selectFromDropdown(${index}); return false;">
-
-                <div>
-                    <strong class="d-block text-dark">
-                        ${escapeHtml(item.nama_barang)} (${escapeHtml(teksSatuan)})
-                    </strong>
-                </div>
-
-                <span class="badge bg-success font-monospace fs-6">
-                    Rp ${Math.round(
-                        item.harga_ecer ||
-                        item.harga_jual ||
-                        0
-                    ).toLocaleString('id-ID')}
-                </span>
-
-            </a>
+        <a href="#"
+        class="dropdown-item-custom"
+        onclick="selectFromDropdown(${index}); return false;">
+        <div class="flex-grow-1" style="min-width: 0;">
+        <div class="item-nama">${escapeHtml(item.nama_barang)}</div>
+        <div class="item-subinfo">
+        ${escapeHtml(teksSatuan || '')}${item.isi ? ' • isi ' + escapeHtml(item.isi) : ''}
+        </div>
+        </div>
+        <div class="text-end">
+        <div class="item-harga">Rp ${harga.toLocaleString('id-ID')}</div>
+        </div>
+        </a>
         `;
     });
 
     let sr = document.getElementById('searchResult');
-
     sr.innerHTML = html;
     sr.style.display = 'block';
+}
+
+
+function showEmptyDropdown(q) {
+    let sr = document.getElementById('searchResult');
+
+    sr.innerHTML = `
+    <div class="dropdown-header-custom">
+    <span><i class="bi bi-search me-1"></i> Hasil Pencarian</span>
+    <button type="button"
+    class="btn-close btn-close-sm"
+    onclick="hideSearchDropdown()"
+    aria-label="Tutup"></button>
+    </div>
+    <div class="p-3 text-center text-muted small">
+    <i class="bi bi-inbox fs-4 d-block mb-2"></i>
+    Tidak ada barang yang cocok dengan
+    "<strong>${escapeHtml(q)}</strong>"
+    </div>
+    `;
+    sr.style.display = 'block';
+}
+
+
+function hideSearchDropdown() {
+    let sr = document.getElementById('searchResult');
+    if (sr) sr.style.display = 'none';
 }
 
 
@@ -372,134 +535,60 @@ function selectFromDropdown(index) {
 // ==========================================
 
 function addToCart(item) {
-
     let isJasa = item.is_jasa || false;
 
     let existingIndex = cart.findIndex(c =>
-        isJasa
-            ? (c.is_jasa && c.keterangan === item.keterangan)
-            : (c.kemasan_id === item.kemasan_id)
+    isJasa
+    ? (c.is_jasa && c.keterangan === item.keterangan)
+    : (c.kemasan_id === item.kemasan_id)
     );
 
     if (existingIndex > -1) {
-
-        let newQty =
-            cart[existingIndex].qty + 1;
-
+        let newQty = cart[existingIndex].qty + 1;
         cart[existingIndex].qty = newQty;
 
-        // Hitung ulang harga jika barang fisik
         if (!isJasa) {
-
-            let tiering =
-                hitungHargaTieringJS(
-                    cart[existingIndex],
-                    newQty
-                );
-
-            cart[existingIndex].harga_jual =
-                tiering.harga_jual;
-
-            cart[existingIndex].jenis_harga =
-                tiering.jenis_harga;
+            let tiering = hitungHargaTieringJS(cart[existingIndex], newQty);
+            cart[existingIndex].harga_jual = tiering.harga_jual;
+            cart[existingIndex].jenis_harga = tiering.jenis_harga;
         }
 
-        cart[existingIndex].subtotal =
-            newQty * cart[existingIndex].harga_jual;
+        cart[existingIndex].subtotal = newQty * cart[existingIndex].harga_jual;
 
     } else {
-
         let initialQty = item.qty || 1;
-
-        let initialHarga =
-            item.harga_jual ||
-            item.harga_ecer ||
-            0;
-
-        let initialJenis =
-            item.jenis_harga ||
-            'ECER';
+        let initialHarga = item.harga_jual || item.harga_ecer || 0;
+        let initialJenis = item.jenis_harga || 'ECER';
 
         if (!isJasa) {
-
-            let tiering =
-                hitungHargaTieringJS(
-                    item,
-                    initialQty
-                );
-
-            initialHarga =
-                tiering.harga_jual;
-
-            initialJenis =
-                tiering.jenis_harga;
+            let tiering = hitungHargaTieringJS(item, initialQty);
+            initialHarga = tiering.harga_jual;
+            initialJenis = tiering.jenis_harga;
         }
 
-        // Penyesuaian Format Nama Barang (Surya 12 (BKS) / Surya 12 (BTG))
-        let namaLengkapBarang = item.nama_lengkap 
-            ? item.nama_lengkap 
-            : (item.satuan && !item.nama_barang.includes(`(${item.satuan})`)
-                ? `${item.nama_barang} (${item.satuan})`
-                : item.nama_barang);
+        let namaLengkapBarang = item.nama_lengkap
+        ? item.nama_lengkap
+        : (item.satuan && !item.nama_barang.includes(`(${item.satuan})`)
+        ? `${item.nama_barang} (${item.satuan})`
+        : item.nama_barang);
 
         cart.push({
-
-            tipe: isJasa
-                ? 'JASA'
-                : 'BARANG',
-
-            kemasan_id:
-                item.kemasan_id || null,
-
-            nama_barang:
-                isJasa ? item.nama_barang : namaLengkapBarang,
-
-            nama_kemasan:
-                item.nama_kemasan || '',
-
-            satuan:
-                item.satuan || 'pcs',
-
-            harga_beli:
-                item.harga_beli || 0,
-
-            harga_ecer:
-                item.harga_ecer ||
-                initialHarga,
-
-            harga_grosir:
-                item.harga_grosir || 0,
-
-            min_qty_grosir:
-                item.min_qty_grosir || 0,
-
-            harga_jual:
-                initialHarga,
-
-            jenis_harga:
-                initialJenis,
-
-            qty:
-                initialQty,
-
-            subtotal:
-                item.subtotal ||
-                (initialQty * initialHarga),
-
-            is_jasa:
-                isJasa,
-
-            kategori:
-                item.kategori ||
-                (
-                    isJasa
-                        ? 'PPOB / Jasa'
-                        : 'Barang Toko'
-                ),
-
-            keterangan:
-                item.keterangan ||
-                item.nama_barang
+            tipe: isJasa ? 'JASA' : 'BARANG',
+            kemasan_id: item.kemasan_id || null,
+            nama_barang: isJasa ? item.nama_barang : namaLengkapBarang,
+            nama_kemasan: item.nama_kemasan || '',
+            satuan: item.satuan || 'pcs',
+            harga_beli: item.harga_beli || 0,
+            harga_ecer: item.harga_ecer || initialHarga,
+            harga_grosir: item.harga_grosir || 0,
+            min_qty_grosir: item.min_qty_grosir || 0,
+            harga_jual: initialHarga,
+            jenis_harga: initialJenis,
+            qty: initialQty,
+            subtotal: item.subtotal || (initialQty * initialHarga),
+                  is_jasa: isJasa,
+                  kategori: item.kategori || (isJasa ? 'PPOB / Jasa' : 'Barang Toko'),
+                  keterangan: item.keterangan || item.nama_barang
         });
     }
 
@@ -508,126 +597,77 @@ function addToCart(item) {
 
 
 function renderCart() {
-
-    let tbody =
-        document.getElementById('cartBody');
-
+    let tbody = document.getElementById('cartBody');
     let total = 0;
 
     tbody.innerHTML = '';
 
     if (cart.length === 0) {
-
         tbody.innerHTML = `
-            <tr>
-                <td colspan="5"
-                    class="text-center text-muted py-5">
-                    Keranjang masih kosong.
-                </td>
-            </tr>
+        <tr>
+        <td colspan="5" class="text-center text-muted py-5">
+        Keranjang masih kosong.
+        </td>
+        </tr>
         `;
 
-        document.getElementById('btnCheckout').disabled =
-            true;
-
+        document.getElementById('btnCheckout').disabled = true;
     } else {
-
         cart.forEach((item, index) => {
-
             total += item.subtotal;
 
             tbody.innerHTML += `
-                <tr>
-
-         <td>
-    <strong class="d-block text-dark">
-        ${escapeHtml(item.nama_barang)}
-    </strong>
-</td>         
-
-                    <td class="font-monospace">
-                        Rp ${Math.round(
-                            item.harga_jual
-                        ).toLocaleString('id-ID')}
-                    </td>
-
-                    <td>
-
-                        <input
-                            type="number"
-                            class="form-control form-control-sm text-center font-monospace fw-bold"
-                            min="1"
-                            value="${item.qty}"
-                            onchange="updateQty(${index}, this.value)"
-                        >
-
-                    </td>
-
-                    <td class="text-end font-monospace fw-bold">
-                        Rp ${Math.round(
-                            item.subtotal
-                        ).toLocaleString('id-ID')}
-                    </td>
-
-                    <td class="text-center">
-
-                        <button
-                            class="btn btn-sm btn-outline-danger px-2 py-1"
-                            onclick="removeItem(${index})"
-                            title="Hapus item ini">
-
-                            <i class="bi bi-trash"></i>
-
-                        </button>
-
-                    </td>
-
-                </tr>
+            <tr>
+            <td>
+            <strong class="d-block text-dark">${escapeHtml(item.nama_barang)}</strong>
+            </td>
+            <td class="font-monospace">
+            Rp ${Math.round(item.harga_jual).toLocaleString('id-ID')}
+            </td>
+            <td>
+            <input type="number"
+            class="form-control form-control-sm text-center font-monospace fw-bold"
+            min="1"
+            value="${item.qty}"
+            onchange="updateQty(${index}, this.value)">
+            </td>
+            <td class="text-end font-monospace fw-bold">
+            Rp ${Math.round(item.subtotal).toLocaleString('id-ID')}
+            </td>
+            <td class="text-center">
+            <button class="btn btn-sm btn-outline-danger px-2 py-1"
+            onclick="removeItem(${index})"
+            title="Hapus item ini">
+            <i class="bi bi-trash"></i>
+            </button>
+            </td>
+            </tr>
             `;
         });
 
-        document.getElementById('btnCheckout').disabled =
-            false;
+        document.getElementById('btnCheckout').disabled = false;
     }
 
     document.getElementById('displayTotal').innerText =
-        'Rp ' +
-        Math.round(total).toLocaleString('id-ID');
+    'Rp ' + Math.round(total).toLocaleString('id-ID');
 
     hitungKembalian();
 }
 
 
 function updateQty(index, val) {
-
-    let qty =
-        parseInt(val) || 1;
-
-    let item =
-        cart[index];
+    let qty = parseInt(val) || 1;
+    let item = cart[index];
 
     item.qty = qty;
 
-    // Jika bukan barang jasa/PPOB,
-    // update harganya otomatis berdasarkan Qty baru
     if (!item.is_jasa) {
-
-        let tiering =
-            hitungHargaTieringJS(
-                item,
-                qty
-            );
-
-        item.harga_jual =
-            tiering.harga_jual;
-
-        item.jenis_harga =
-            tiering.jenis_harga;
+        let tiering = hitungHargaTieringJS(item, qty);
+        item.harga_jual = tiering.harga_jual;
+        item.jenis_harga = tiering.jenis_harga;
     }
 
-    item.subtotal =
-        qty * item.harga_jual;
-
+    item.subtotal = qty * item.harga_jual;
     renderCart();
 }
 
@@ -650,14 +690,10 @@ function clearCart() {
 
 function clearScan() {
     const inputScan = document.getElementById('inputScan');
-    if (inputScan) {
-        inputScan.value = '';
-    }
+    if (inputScan) inputScan.value = '';
 
     const searchResult = document.getElementById('searchResult');
-    if (searchResult) {
-        searchResult.style.display = 'none';
-    }
+    if (searchResult) searchResult.style.display = 'none';
 
     resetFocusScan();
 }
@@ -665,9 +701,7 @@ function clearScan() {
 function resetFocusScan() {
     setTimeout(() => {
         const inputScan = document.getElementById('inputScan');
-        if (inputScan) {
-            inputScan.focus();
-        }
+        if (inputScan) inputScan.focus();
     }, 100);
 }
 
@@ -677,16 +711,8 @@ function resetFocusScan() {
 // ==========================================
 
 function setNominalBayar(val) {
-
-    let inputBayar =
-        document.getElementById('inputBayar');
-
-    let total =
-        cart.reduce(
-            (sum, item) =>
-                sum + item.subtotal,
-            0
-        );
+    let inputBayar = document.getElementById('inputBayar');
+    let total = cart.reduce((sum, item) => sum + item.subtotal, 0);
 
     if (val === 'PAS') {
         inputBayar.value = total;
@@ -694,54 +720,25 @@ function setNominalBayar(val) {
         inputBayar.value = val;
     }
 
-    // Format ulang angka ke pemisah ribuan
     formatInputRupiahJS(inputBayar);
-
     hitungKembalian();
 }
 
 
 function hitungKembalian() {
+    let total = cart.reduce((sum, item) => sum + item.subtotal, 0);
+    let rawBayar = document.getElementById('inputBayar').value.replace(/\./g, '');
+    let bayar = parseFloat(rawBayar) || 0;
+    let kembalian = bayar - total;
 
-    let total =
-        cart.reduce(
-            (sum, item) =>
-                sum + item.subtotal,
-            0
-        );
+    let elem = document.getElementById('displayKembalian');
 
-    // Clean karakter titik pemisah ribuan
-    // sebelum parsing uang bayar
-    let rawBayar =
-        document.getElementById('inputBayar')
-            .value
-            .replace(/\./g, '');
-
-    let bayar =
-        parseFloat(rawBayar) || 0;
-
-    let kembalian =
-        bayar - total;
-
-    let elem =
-        document.getElementById(
-            'displayKembalian'
-        );
-
-    elem.innerText =
-        'Rp ' +
-        Math.round(kembalian)
-            .toLocaleString('id-ID');
+    elem.innerText = 'Rp ' + Math.round(kembalian).toLocaleString('id-ID');
 
     if (kembalian < 0) {
-
-        elem.className =
-            'fw-bold fs-5 text-danger';
-
+        elem.className = 'fw-bold fs-5 text-danger';
     } else {
-
-        elem.className =
-            'fw-bold fs-5 text-dark';
+        elem.className = 'fw-bold fs-5 text-dark';
     }
 }
 
@@ -751,177 +748,90 @@ function hitungKembalian() {
 // ==========================================
 
 function openKelolaFavorit() {
-
-    document.getElementById(
-        'inputSearchFavorit'
-    ).value = '';
-
+    document.getElementById('inputSearchFavorit').value = '';
     loadFavoritList('');
 
-    let modalFav =
-        new bootstrap.Modal(
-            document.getElementById(
-                'modalKelolaFavorit'
-            )
-        );
-
+    let modalFav = new bootstrap.Modal(
+        document.getElementById('modalKelolaFavorit')
+    );
     modalFav.show();
 }
 
 
 function loadFavoritList(q) {
+    fetch('api_favorit.php?action=search&q=' + encodeURIComponent(q))
+    .then(res => res.json())
+    .then(res => {
+        let tbody = document.getElementById('favoritListBody');
+        tbody.innerHTML = '';
 
-    fetch(
-        'api_favorit.php?action=search&q=' +
-        encodeURIComponent(q)
-    )
-        .then(res => res.json())
-        .then(res => {
+        if (res.status === 'success' && res.data.length > 0) {
+            res.data.forEach(item => {
+                let isFav = parseInt(item.is_favorite) === 1;
+                let btnClass = isFav ? 'btn-warning text-dark' : 'btn-outline-secondary';
+                let iconClass = isFav ? 'bi-star-fill' : 'bi-star';
+                let newStatus = isFav ? 0 : 1;
 
-            let tbody =
-                document.getElementById(
-                    'favoritListBody'
-                );
-
-            tbody.innerHTML = '';
-
-            if (
-                res.status === 'success' &&
-                res.data.length > 0
-            ) {
-
-                res.data.forEach(item => {
-
-                    let isFav =
-                        parseInt(
-                            item.is_favorite
-                        ) === 1;
-
-                    let btnClass =
-                        isFav
-                            ? 'btn-warning text-dark'
-                            : 'btn-outline-secondary';
-
-                    let iconClass =
-                        isFav
-                            ? 'bi-star-fill'
-                            : 'bi-star';
-
-                    let newStatus =
-                        isFav ? 0 : 1;
-
-                    tbody.innerHTML += `
-                        <tr>
-
-                            <td>
-                                <strong class="text-dark">
-                                    ${escapeHtml(
-                                        item.nama_barang
-                                    )}
-                                </strong>
-                            </td>
-
-                            <td>
-    <span class="badge bg-light text-dark border">
-        ${escapeHtml(item.satuan && item.satuan.trim() !== '' ? item.satuan : item.nama_kemasan)}
-    </span>
-</td>
-
-                            <td class="text-center">
-
-                                <button
-                                    type="button"
-                                    class="btn btn-sm ${btnClass} fw-bold"
-                                    onclick="toggleFavorit(
-                                        ${item.kemasan_id},
-                                        ${newStatus}
-                                    )">
-
-                                    <i class="bi ${iconClass}"></i>
-
-                                    ${isFav
-                                        ? 'Favorit'
-                                        : 'Biasa'}
-
-                                </button>
-
-                            </td>
-
-                        </tr>
-                    `;
-
-                });
-
-            } else {
-
-                tbody.innerHTML = `
-                    <tr>
-                        <td colspan="3"
-                            class="text-center text-muted py-4">
-                            Barang tidak ditemukan.
-                        </td>
-                    </tr>
+                tbody.innerHTML += `
+                <tr>
+                <td>
+                <strong class="text-dark">${escapeHtml(item.nama_barang)}</strong>
+                </td>
+                <td>
+                <span class="badge bg-light text-dark border">
+                ${escapeHtml(item.satuan && item.satuan.trim() !== '' ? item.satuan : item.nama_kemasan)}
+                </span>
+                </td>
+                <td class="text-center">
+                <button type="button"
+                class="btn btn-sm ${btnClass} fw-bold"
+                onclick="toggleFavorit(${item.kemasan_id}, ${newStatus})">
+                <i class="bi ${iconClass}"></i>
+                ${isFav ? 'Favorit' : 'Biasa'}
+                </button>
+                </td>
+                </tr>
                 `;
-            }
-        });
+            });
+        } else {
+            tbody.innerHTML = `
+            <tr>
+            <td colspan="3" class="text-center text-muted py-4">
+            Barang tidak ditemukan.
+            </td>
+            </tr>
+            `;
+        }
+    });
 }
 
 
 function toggleFavorit(kemasanId, status) {
+    let formData = new FormData();
+    formData.append('kemasan_id', kemasanId);
+    formData.append('status', status);
 
-    let formData =
-        new FormData();
-
-    formData.append(
-        'kemasan_id',
-        kemasanId
-    );
-
-    formData.append(
-        'status',
-        status
-    );
-
-    fetch(
-        'api_favorit.php?action=toggle',
-        {
-            method: 'POST',
-            body: formData
+    fetch('api_favorit.php?action=toggle', {
+        method: 'POST',
+        body: formData
+    })
+    .then(res => res.json())
+    .then(res => {
+        if (res.status === 'success') {
+            isFavoritChanged = true;
+            let q = document.getElementById('inputSearchFavorit').value;
+            loadFavoritList(q);
+        } else {
+            alert('Gagal mengubah favorit: ' + res.message);
         }
-    )
-        .then(res => res.json())
-        .then(res => {
-
-            if (res.status === 'success') {
-
-                isFavoritChanged = true;
-
-                let q =
-                    document.getElementById(
-                        'inputSearchFavorit'
-                    ).value;
-
-                loadFavoritList(q);
-
-            } else {
-
-                alert(
-                    'Gagal mengubah favorit: ' +
-                    res.message
-                );
-            }
-        });
+    });
 }
 
 
 function closeKelolaFavorit() {
-
     if (isFavoritChanged) {
-
         location.reload();
-
     } else {
-
         resetFocusScan();
     }
 }
@@ -932,162 +842,83 @@ function closeKelolaFavorit() {
 // ==========================================
 
 function redirectToCreateBarang() {
-
-    window.location.href =
-        '../barang/?barcode=' +
-        encodeURIComponent(
-            scannedBarcode
-        );
+    window.location.href = '../barang/?barcode=' + encodeURIComponent(scannedBarcode);
 }
 
 
 function openAttachBarcodeModal() {
+    let modalNF = bootstrap.Modal.getInstance(
+        document.getElementById('modalNotFound')
+    );
+    if (modalNF) modalNF.hide();
 
-    let modalNF =
-        bootstrap.Modal.getInstance(
-            document.getElementById(
-                'modalNotFound'
-            )
-        );
-
-    if (modalNF) {
-        modalNF.hide();
-    }
-
-    document.getElementById(
-        'attachBarcodeVal'
-    ).value = scannedBarcode;
-
+    document.getElementById('attachBarcodeVal').value = scannedBarcode;
     searchBarangTarget('');
 
-    let modalAttach =
-        new bootstrap.Modal(
-            document.getElementById(
-                'modalAttachBarcode'
-            )
-        );
-
+    let modalAttach = new bootstrap.Modal(
+        document.getElementById('modalAttachBarcode')
+    );
     modalAttach.show();
 }
 
 
 function searchBarangTarget(q) {
+    fetch('api_search.php?q=' + encodeURIComponent(q))
+    .then(res => res.json())
+    .then(res => {
+        let select = document.getElementById('selectTargetKemasan');
+        select.innerHTML = '';
 
-    fetch(
-        'api_search.php?q=' +
-        encodeURIComponent(q)
-    )
-        .then(res => res.json())
-        .then(res => {
+        if (res.status === 'success' && res.data.length > 0) {
+            res.data.forEach(item => {
+                let namaTarget = item.nama_lengkap
+                ? item.nama_lengkap
+                : (item.nama_kemasan && !item.nama_barang.includes(`(${item.nama_kemasan})`)
+                ? `${item.nama_barang} (${item.nama_kemasan})`
+                : item.nama_barang);
 
-            let select =
-                document.getElementById(
-                    'selectTargetKemasan'
-                );
-
-            select.innerHTML = '';
-
-            if (
-                res.status === 'success' &&
-                res.data.length > 0
-            ) {
-
-                res.data.forEach(item => {
-                    let namaTarget = item.nama_lengkap 
-                        ? item.nama_lengkap 
-                        : (item.nama_kemasan && !item.nama_barang.includes(`(${item.nama_kemasan})`)
-                            ? `${item.nama_barang} (${item.nama_kemasan})`
-                            : item.nama_barang);
-
-                    select.innerHTML += `
-                        <option value="${item.kemasan_id}">
-                            ${escapeHtml(namaTarget)} (Rp ${Math.round(
-                                item.harga_ecer
-                            ).toLocaleString('id-ID')})
-                        </option>
-                    `;
-
-                });
-
-            } else {
-
-                select.innerHTML =
-                    '<option disabled>Tidak ada barang ditemukan...</option>';
-            }
-        });
+                select.innerHTML += `
+                <option value="${item.kemasan_id}">
+                ${escapeHtml(namaTarget)} (Rp ${Math.round(item.harga_ecer).toLocaleString('id-ID')})
+                </option>
+                `;
+            });
+        } else {
+            select.innerHTML = '<option disabled>Tidak ada barang ditemukan...</option>';
+        }
+    });
 }
 
 
 function simpanAttachBarcode() {
-
-    let kemasanId =
-        document.getElementById(
-            'selectTargetKemasan'
-        ).value;
-
-    let barcode =
-        document.getElementById(
-            'attachBarcodeVal'
-        ).value;
+    let kemasanId = document.getElementById('selectTargetKemasan').value;
+    let barcode = document.getElementById('attachBarcodeVal').value;
 
     if (!kemasanId) {
-
-        alert(
-            'Pilih barang target terlebih dahulu!'
-        );
-
+        alert('Pilih barang target terlebih dahulu!');
         return;
     }
 
-    fetch(
-        'api_attach_barcode.php',
-        {
-            method: 'POST',
+    fetch('api_attach_barcode.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ barang_kemasan_id: kemasanId, barcode: barcode })
+    })
+    .then(res => res.json())
+    .then(res => {
+        if (res.status === 'success') {
+            alert('Barcode berhasil dihubungkan!');
 
-            headers: {
-                'Content-Type':
-                    'application/json'
-            },
+            let modalAttach = bootstrap.Modal.getInstance(
+                document.getElementById('modalAttachBarcode')
+            );
+            if (modalAttach) modalAttach.hide();
 
-            body: JSON.stringify({
-                barang_kemasan_id:
-                    kemasanId,
-
-                barcode:
-                    barcode
-            })
+            processSearch(barcode);
+        } else {
+            alert('Gagal: ' + res.message);
         }
-    )
-        .then(res => res.json())
-        .then(res => {
-
-            if (res.status === 'success') {
-
-                alert(
-                    'Barcode berhasil dihubungkan!'
-                );
-
-                let modalAttach =
-                    bootstrap.Modal.getInstance(
-                        document.getElementById(
-                            'modalAttachBarcode'
-                        )
-                    );
-
-                if (modalAttach) {
-                    modalAttach.hide();
-                }
-
-                processSearch(barcode);
-
-            } else {
-
-                alert(
-                    'Gagal: ' +
-                    res.message
-                );
-            }
-        });
+    });
 }
 
 
@@ -1096,481 +927,185 @@ function simpanAttachBarcode() {
 // ==========================================
 
 function prosesCheckout() {
-
     if (cart.length === 0) {
-
-        alert(
-            'Keranjang belanja masih kosong!'
-        );
-
+        alert('Keranjang belanja masih kosong!');
         return;
     }
 
-    let total =
-        cart.reduce(
-            (sum, item) =>
-                sum + item.subtotal,
-            0
-        );
+    let total = cart.reduce((sum, item) => sum + item.subtotal, 0);
+    let rawBayar = document.getElementById('inputBayar').value.replace(/\./g, '');
+    let bayar = parseFloat(rawBayar) || 0;
+    let metode = document.getElementById('metodeBayar').value;
+    let pelangganId = document.getElementById('selectPelanggan').value;
 
-    // Clean karakter titik pemisah ribuan
-    // sebelum dikirim ke server/checkout
-    let rawBayar =
-        document.getElementById(
-            'inputBayar'
-        ).value.replace(/\./g, '');
-
-    let bayar =
-        parseFloat(rawBayar) || 0;
-
-    let metode =
-        document.getElementById(
-            'metodeBayar'
-        ).value;
-
-    let pelangganId =
-        document.getElementById(
-            'selectPelanggan'
-        ).value;
-
-
-    // Validasi Metode TUNAI
-    if (
-        metode === 'TUNAI' &&
-        bayar < total
-    ) {
-
-        alert(
-            'Uang pembayaran masih kurang!'
-        );
-
+    if (metode === 'TUNAI' && bayar < total) {
+        alert('Uang pembayaran masih kurang!');
         return;
     }
 
-
-    // Validasi Metode UTANG
-    if (
-        metode === 'UTANG' &&
-        !pelangganId
-    ) {
-
-        alert(
-            'Silakan pilih Pelanggan terlebih dahulu untuk transaksi UTANG / BON!'
-        );
-
+    if (metode === 'UTANG' && !pelangganId) {
+        alert('Silakan pilih Pelanggan terlebih dahulu untuk transaksi UTANG / BON!');
         return;
     }
 
-
-    let btnCheckout =
-        document.getElementById(
-            'btnCheckout'
-        );
-
+    let btnCheckout = document.getElementById('btnCheckout');
     btnCheckout.disabled = true;
-
     btnCheckout.innerHTML = `
-        <span class="spinner-border spinner-border-sm me-2"></span>
-        Menyimpan Transaksi...
+    <span class="spinner-border spinner-border-sm me-2"></span>
+    Menyimpan Transaksi...
     `;
 
+    let kembalian = bayar - total;
 
-    let kembalian =
-        bayar - total;
-
-
-    // ==========================================
     // TANGGAL & WAKTU
-    // ==========================================
+    let today = new Date();
+    let yyyy = today.getFullYear();
+    let mm = String(today.getMonth() + 1).padStart(2, '0');
+    let dd = String(today.getDate()).padStart(2, '0');
+    let hh = String(today.getHours()).padStart(2, '0');
+    let ii = String(today.getMinutes()).padStart(2, '0');
+    let ss = String(today.getSeconds()).padStart(2, '0');
 
-    let today =
-        new Date();
+    let tglForm = `${yyyy}-${mm}-${dd}`;
+    let datetimeFull = `${yyyy}-${mm}-${dd} ${hh}:${ii}:${ss}`;
 
-    let yyyy =
-        today.getFullYear();
-
-    let mm =
-        String(
-            today.getMonth() + 1
-        ).padStart(2, '0');
-
-    let dd =
-        String(
-            today.getDate()
-        ).padStart(2, '0');
-
-    let hh =
-        String(
-            today.getHours()
-        ).padStart(2, '0');
-
-    let ii =
-        String(
-            today.getMinutes()
-        ).padStart(2, '0');
-
-    let ss =
-        String(
-            today.getSeconds()
-        ).padStart(2, '0');
-
-
-    let tglForm =
-        `${yyyy}-${mm}-${dd}`;
-
-    let datetimeFull =
-        `${yyyy}-${mm}-${dd} ${hh}:${ii}:${ss}`;
-
-
-    // ==========================================
     // PISAH BARANG FISIK & JASA/PPOB
-    // ==========================================
+    let itemsBarang = cart.filter(item => !item.is_jasa);
+    let itemsJasa = cart.filter(item => item.is_jasa);
 
-    let itemsBarang =
-        cart.filter(
-            item => !item.is_jasa
-        );
-
-    let itemsJasa =
-        cart.filter(
-            item => item.is_jasa
-        );
-
-
-    // ==========================================
-    // PAYLOAD CHECKOUT
-    // ==========================================
+    // SNAPSHOT CART (untuk render struk nanti)
+    let cartSnapshot = cart.map(item => ({ ...item }));
 
     let payload = {
-
-        tanggal:
-            tglForm,
-
-        created_at:
-            datetimeFull,
-
-        total_kotor:
-            total,
-
-        diskon:
-            0,
-
-        total_bersih:
-            total,
-
-        bayar:
-            bayar,
-
-        kembalian:
-            kembalian > 0
-                ? kembalian
-                : 0,
-
-        metode_bayar:
-            metode,
-
-        pelanggan_id:
-            pelangganId || 0,
-
-        catatan:
-            '',
-
-        // Tetap dikirim untuk kompatibilitas
-        items:
-            cart,
-
-        // Barang fisik toko
-        // untuk pemotongan stok & laporan fisik
-        items_barang:
-            itemsBarang,
-
-        // Layanan PPOB/Jasa
-        // untuk laporan PPOB/Jasa
-        items_jasa:
-            itemsJasa
+        tanggal: tglForm,
+        created_at: datetimeFull,
+        total_kotor: total,
+        diskon: 0,
+        total_bersih: total,
+        bayar: bayar,
+        kembalian: kembalian > 0 ? kembalian : 0,
+        metode_bayar: metode,
+        pelanggan_id: pelangganId || 0,
+        catatan: '',
+        items: cart,
+        items_barang: itemsBarang,
+        items_jasa: itemsJasa
     };
 
+    fetch('api_checkout.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    })
+    .then(res => res.json())
+    .then(res => {
+        btnCheckout.disabled = false;
+        btnCheckout.innerHTML = `
+        <i class="bi bi-printer me-2"></i>
+        SIMPAN & PROSES
+        `;
 
-    // ==========================================
-    // KIRIM CHECKOUT KE SERVER
-    // ==========================================
+        if (res.status === true) {
+            let now = new Date();
+            let tglStr = now.toLocaleDateString('id-ID') + ' ' +
+            now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
 
-    fetch(
-        'api_checkout.php',
-        {
-            method: 'POST',
+            // DATA STRUK
+            document.getElementById('receiptNota').innerText =
+            res.no_faktur || res.no_nota || 'TRX-' + Date.now();
+            document.getElementById('receiptTanggal').innerText = tglStr;
+            document.getElementById('receiptMetode').innerText = metode;
 
-            headers: {
-                'Content-Type':
-                    'application/json'
-            },
-
-            body:
-                JSON.stringify(payload)
-        }
-    )
-        .then(res => res.json())
-
-        .then(res => {
-
-            btnCheckout.disabled =
-                false;
-
-            btnCheckout.innerHTML = `
-                <i class="bi bi-printer me-2"></i>
-                SIMPAN & PROSES
-            `;
-
-
-            // ==========================================
-            // CHECKOUT BERHASIL
-            // ==========================================
-
-            if (res.status === true) {
-
-                let now =
-                    new Date();
-
-                let tglStr =
-                    now.toLocaleDateString(
-                        'id-ID'
-                    ) +
-                    ' ' +
-                    now.toLocaleTimeString(
-                        'id-ID',
-                        {
-                            hour: '2-digit',
-                            minute: '2-digit'
-                        }
-                    );
-
-
-                // ==========================================
-                // DATA STRUK
-                // ==========================================
-
-                document.getElementById(
-                    'receiptNota'
-                ).innerText =
-                    res.no_faktur ||
-                    res.no_nota ||
-                    'TRX-' + Date.now();
-
-
-                document.getElementById(
-                    'receiptTanggal'
-                ).innerText =
-                    tglStr;
-
-
-                document.getElementById(
-                    'receiptMetode'
-                ).innerText =
-                    metode;
-
-
-                // ==========================================
-                // PELANGGAN UTANG
-                // ==========================================
-
-                if (
-                    metode === 'UTANG' &&
-                    res.nama_pelanggan
-                ) {
-
-                    document.getElementById(
-                        'receiptPelangganBox'
-                    ).style.display =
-                        'block';
-
-                    document.getElementById(
-                        'receiptPelanggan'
-                    ).innerText =
-                        res.nama_pelanggan;
-
-                } else {
-
-                    document.getElementById(
-                        'receiptPelangganBox'
-                    ).style.display =
-                        'none';
-                }
-
-
-                // ==========================================
-                // ITEM STRUK
-                // ==========================================
-
-                let itemsHtml = '';
-
-                cart.forEach(item => {
-
-                    itemsHtml += `
-                        <tr>
-                            <td colspan="2">
-                                <strong>
-                                    ${escapeHtml(
-                                        item.nama_barang
-                                    )}
-                                </strong>
-                            </td>
-                        </tr>
-
-                        <tr>
-                            <td>
-                                ${item.qty}
-                                x
-                                ${Math.round(
-                                    item.harga_jual
-                                ).toLocaleString('id-ID')}
-                            </td>
-
-                            <td class="text-end">
-                                Rp ${Math.round(
-                                    item.subtotal
-                                ).toLocaleString('id-ID')}
-                            </td>
-                        </tr>
-                    `;
-                });
-
-
-                document.getElementById(
-                    'receiptItems'
-                ).innerHTML =
-                    itemsHtml;
-
-
-                // ==========================================
-                // TOTAL STRUK
-                // ==========================================
-
-                document.getElementById(
-                    'receiptTotal'
-                ).innerText =
-                    'Rp ' +
-                    Math.round(total)
-                        .toLocaleString('id-ID');
-
-
-                document.getElementById(
-                    'receiptBayar'
-                ).innerText =
-                    'Rp ' +
-                    Math.round(bayar)
-                        .toLocaleString('id-ID');
-
-
-                document.getElementById(
-                    'receiptKembalian'
-                ).innerText =
-                    'Rp ' +
-                    Math.round(
-                        kembalian > 0
-                            ? kembalian
-                            : 0
-                    ).toLocaleString('id-ID');
-
-
-                // ==========================================
-                // TAMPILKAN MODAL STRUK
-                // ==========================================
-
-                let modalStruk =
-                    new bootstrap.Modal(
-                        document.getElementById(
-                            'modalStruk'
-                        )
-                    );
-
-                modalStruk.show();
-
-
-                // ==========================================
-                // RESET TRANSAKSI
-                // ==========================================
-
-                clearCart();
-
-                document.getElementById(
-                    'inputBayar'
-                ).value = '';
-
-                document.getElementById(
-                    'displayKembalian'
-                ).innerText =
-                    'Rp 0';
-
-                document.getElementById(
-                    'metodeBayar'
-                ).value =
-                    'TUNAI';
-
-                toggleFormUtang();
-
-
+            // PELANGGAN UTANG
+            if (metode === 'UTANG' && res.nama_pelanggan) {
+                document.getElementById('receiptPelangganBox').style.display = 'block';
+                document.getElementById('receiptPelanggan').innerText = res.nama_pelanggan;
             } else {
-
-                alert(
-                    'Gagal menyimpan transaksi: ' +
-                    (
-                        res.message ||
-                        'Terjadi kesalahan pada server.'
-                    )
-                );
+                document.getElementById('receiptPelangganBox').style.display = 'none';
             }
-        })
 
-        .catch(err => {
+            // ITEM STRUK
+            let itemsHtml = '';
+            cartSnapshot.forEach(item => {
+                itemsHtml += `
+                <tr>
+                <td colspan="2">
+                <strong>${escapeHtml(item.nama_barang)}</strong>
+                </td>
+                </tr>
+                <tr>
+                <td>
+                ${item.qty} x ${Math.round(item.harga_jual).toLocaleString('id-ID')}
+                </td>
+                <td class="text-end">
+                Rp ${Math.round(item.subtotal).toLocaleString('id-ID')}
+                </td>
+                </tr>
+                `;
+            });
+            document.getElementById('receiptItems').innerHTML = itemsHtml;
 
-            btnCheckout.disabled =
-                false;
+            // TOTAL STRUK
+            document.getElementById('receiptTotal').innerText =
+            'Rp ' + Math.round(total).toLocaleString('id-ID');
+            document.getElementById('receiptBayar').innerText =
+            'Rp ' + Math.round(bayar).toLocaleString('id-ID');
+            document.getElementById('receiptKembalian').innerText =
+            'Rp ' + Math.round(kembalian > 0 ? kembalian : 0).toLocaleString('id-ID');
 
-            btnCheckout.innerHTML = `
-                <i class="bi bi-printer me-2"></i>
-                SIMPAN & PROSES
-            `;
-
-            alert(
-                'Terjadi kesalahan koneksi atau server!'
+            // TAMPILKAN MODAL STRUK
+            let modalStruk = new bootstrap.Modal(
+                document.getElementById('modalStruk')
             );
+            modalStruk.show();
 
-            console.error(
-                'Checkout error:',
-                err
-            );
-        });
+            // RESET TRANSAKSI
+            clearCart();
+            document.getElementById('inputBayar').value = '';
+            document.getElementById('displayKembalian').innerText = 'Rp 0';
+            document.getElementById('metodeBayar').value = 'TUNAI';
+
+            // Reset pelanggan
+            document.getElementById('selectPelanggan').value = '';
+            const labelPel = document.getElementById('labelPelangganTerpilih');
+            if (labelPel) labelPel.textContent = '-- Pilih Pelanggan --';
+
+            toggleFormUtang();
+
+        } else {
+            alert('Gagal menyimpan transaksi: ' +
+            (res.message || 'Terjadi kesalahan pada server.'));
+        }
+    })
+    .catch(err => {
+        btnCheckout.disabled = false;
+        btnCheckout.innerHTML = `
+        <i class="bi bi-printer me-2"></i>
+        SIMPAN & PROSES
+        `;
+        alert('Terjadi kesalahan koneksi atau server!');
+        console.error('Checkout error:', err);
+    });
 }
 
 
 // ==========================================
 // TAMBAH PELANGGAN BARU (DARI KASIR)
 // ==========================================
-// ⚠️ Path fetch 'api_tambah_pelanggan.php' & 'api_search_pelanggan.php'
-//    relatif terhadap HALAMAN (kasir/index.php), bukan lokasi file JS ini.
-//    Pastikan file API ada di folder kasir/.
 
-/**
- * Buka modal tambah pelanggan baru
- */
 function openModalTambahPelanggan() {
-    // Reset form
     document.getElementById('formTambahPelangganKasir').reset();
     document.getElementById('alertTambahPelanggan').innerHTML = '';
 
     let modal = new bootstrap.Modal(document.getElementById('modalTambahPelanggan'));
     modal.show();
 
-    // Focus ke input nama
     setTimeout(() => {
         document.getElementById('newPelangganNama').focus();
     }, 300);
 }
 
 
-/**
- * Simpan pelanggan baru via AJAX
- */
 function simpanPelangganBaru() {
     let nama   = document.getElementById('newPelangganNama').value.trim();
     let no_hp  = document.getElementById('newPelangganHp').value.trim();
@@ -1578,7 +1113,7 @@ function simpanPelangganBaru() {
 
     if (!nama) {
         document.getElementById('alertTambahPelanggan').innerHTML =
-            '<div class="alert alert-danger py-2 small">Nama pelanggan wajib diisi!</div>';
+        '<div class="alert alert-danger py-2 small">Nama pelanggan wajib diisi!</div>';
         return;
     }
 
@@ -1586,7 +1121,6 @@ function simpanPelangganBaru() {
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Menyimpan...';
 
-    // Kirim ke API (relatif dari kasir/index.php)
     let formData = new FormData();
     formData.append('nama', nama);
     formData.append('no_hp', no_hp);
@@ -1602,58 +1136,49 @@ function simpanPelangganBaru() {
         btn.innerHTML = '<i class="bi bi-save me-1"></i> Simpan & Pilih Pelanggan';
 
         if (res.status === 'success') {
-            // Tutup modal
-            let modal = bootstrap.Modal.getInstance(document.getElementById('modalTambahPelanggan'));
+            let modal = bootstrap.Modal.getInstance(
+                document.getElementById('modalTambahPelanggan')
+            );
             if (modal) modal.hide();
 
-            // Reload daftar pelanggan & auto-select yang baru
             loadPelangganListDanPilih(res.data.id);
-
         } else {
             document.getElementById('alertTambahPelanggan').innerHTML =
-                '<div class="alert alert-danger py-2 small">' +
-                (res.message || 'Gagal menyimpan') + '</div>';
+            '<div class="alert alert-danger py-2 small">' +
+            (res.message || 'Gagal menyimpan') + '</div>';
         }
     })
     .catch(err => {
         btn.disabled = false;
         btn.innerHTML = '<i class="bi bi-save me-1"></i> Simpan & Pilih Pelanggan';
         document.getElementById('alertTambahPelanggan').innerHTML =
-            '<div class="alert alert-danger py-2 small">Terjadi kesalahan koneksi.</div>';
+        '<div class="alert alert-danger py-2 small">Terjadi kesalahan koneksi.</div>';
         console.error('Error simpan pelanggan:', err);
     });
 }
 
 
-/**
- * Load ulang daftar pelanggan dan auto-select ID tertentu
- */
 function loadPelangganListDanPilih(selectedId) {
     fetch('api_search_pelanggan.php')
-        .then(res => res.json())
-        .then(res => {
-            let select = document.getElementById('selectPelanggan');
-            select.innerHTML = '<option value="">-- Pilih Pelanggan --</option>';
+    .then(res => res.json())
+    .then(res => {
+        daftarPelangganGlobal = (res.status === 'success' && Array.isArray(res.data))
+        ? res.data
+        : [];
+        renderPelangganDropdown(daftarPelangganGlobal);
 
-            if (res.status === 'success' && res.data.length > 0) {
-                res.data.forEach(p => {
-                    let opt = document.createElement('option');
-                    opt.value = p.id;
-                    opt.textContent = p.nama + (p.no_hp ? ' (' + p.no_hp + ')' : '');
-
-                    if (String(p.id) === String(selectedId)) {
-                        opt.selected = true;
-                    }
-                    select.appendChild(opt);
-                });
+        if (selectedId) {
+            const found = daftarPelangganGlobal.find(p => String(p.id) === String(selectedId));
+            if (found) {
+                pilihPelanggan(found.id, found.nama);
             }
+        }
 
-            // Fokus kembali ke input scan setelah selesai
-            resetFocusScan();
-        })
-        .catch(err => {
-            console.error('Error load pelanggan:', err);
-        });
+        resetFocusScan();
+    })
+    .catch(err => {
+        console.error('loadPelangganListDanPilih error:', err);
+    });
 }
 
 
@@ -1661,28 +1186,16 @@ function loadPelangganListDanPilih(selectedId) {
 // MODAL DAFTAR PELANGGAN UTANG AKTIF
 // ==========================================
 
-let currentSisaUtangKasir = 0;
-let debounceUtangTimer = null;
-
-/**
- * Buka modal daftar pelanggan utang
- */
 function openModalDaftarUtang() {
-    // Reset search
     document.getElementById('inputSearchUtang').value = '';
 
-    // Tampilkan modal
     let modal = new bootstrap.Modal(document.getElementById('modalDaftarUtang'));
     modal.show();
 
-    // Load data awal
     loadDaftarUtang('');
 }
 
 
-/**
- * Debounce search biar tidak spam request
- */
 function debounceCariUtang(val) {
     clearTimeout(debounceUtangTimer);
     debounceUtangTimer = setTimeout(() => {
@@ -1691,93 +1204,84 @@ function debounceCariUtang(val) {
 }
 
 
-/**
- * Load daftar pelanggan utang dari API
- */
 function loadDaftarUtang(q) {
     let loading = document.getElementById('utangLoading');
     let tbody = document.getElementById('utangListBody');
 
-    // Tampilkan loading
     loading.style.display = 'block';
     tbody.innerHTML = '';
 
     fetch('api_utang_aktif.php?q=' + encodeURIComponent(q))
-        .then(res => res.json())
-        .then(res => {
-            loading.style.display = 'none';
+    .then(res => res.json())
+    .then(res => {
+        loading.style.display = 'none';
 
-            if (res.status !== 'success') {
-                tbody.innerHTML = `
-                    <tr>
-                        <td colspan="4" class="text-center text-danger py-3">
-                            Gagal memuat data: ${res.message || 'Error'}
-                        </td>
-                    </tr>
-                `;
-                return;
-            }
-
-            // Update summary
-            document.getElementById('utangTotalCount').innerText = res.total_count;
-            document.getElementById('utangGrandTotal').innerText = res.grand_format;
-
-            // Render tabel
-            if (res.data.length === 0) {
-                tbody.innerHTML = `
-                    <tr>
-                        <td colspan="4" class="text-center text-muted py-4">
-                            <i class="bi bi-inbox fs-3 d-block mb-2"></i>
-                            Tidak ada pelanggan dengan utang aktif.
-                        </td>
-                    </tr>
-                `;
-                return;
-            }
-
-            let html = '';
-            res.data.forEach(p => {
-                html += `
-                    <tr>
-                        <td>
-                            <strong class="text-dark">${escapeHtml(p.nama)}</strong>
-                        </td>
-                        <td>
-                            ${p.no_hp ? '<a href="https://wa.me/' + p.no_hp.replace(/[^0-9]/g, '') + '" target="_blank" class="text-decoration-none text-success"><i class="bi bi-whatsapp me-1"></i>' + escapeHtml(p.no_hp) + '</a>' : '<span class="text-muted">-</span>'}
-                        </td>
-                        <td class="text-end">
-                            <span class="badge bg-danger fs-6 font-monospace">${p.sisa_format}</span>
-                        </td>
-                        <td class="text-center">
-                            <button type="button"
-                                    class="btn btn-sm btn-success fw-bold"
-                                    onclick="openModalBayarUtang(${p.id}, '${escapeHtml(p.nama).replace(/'/g, "\\'")}', ${p.sisa_utang})">
-                                <i class="bi bi-cash-coin"></i> Bayar
-                            </button>
-                        </td>
-                    </tr>
-                `;
-            });
-
-            tbody.innerHTML = html;
-        })
-        .catch(err => {
-            loading.style.display = 'none';
+        if (res.status !== 'success') {
             tbody.innerHTML = `
-                <tr>
-                    <td colspan="4" class="text-center text-danger py-3">
-                        Terjadi kesalahan koneksi.
-                    </td>
-                </tr>
+            <tr>
+            <td colspan="4" class="text-center text-danger py-3">
+            Gagal memuat data: ${res.message || 'Error'}
+            </td>
+            </tr>
             `;
-            console.error('Error load daftar utang:', err);
+            return;
+        }
+
+        document.getElementById('utangTotalCount').innerText = res.total_count;
+        document.getElementById('utangGrandTotal').innerText = res.grand_format;
+
+        if (res.data.length === 0) {
+            tbody.innerHTML = `
+            <tr>
+            <td colspan="4" class="text-center text-muted py-4">
+            <i class="bi bi-inbox fs-3 d-block mb-2"></i>
+            Tidak ada pelanggan dengan utang aktif.
+            </td>
+            </tr>
+            `;
+            return;
+        }
+
+        let html = '';
+        res.data.forEach(p => {
+            html += `
+            <tr>
+            <td>
+            <strong class="text-dark">${escapeHtml(p.nama)}</strong>
+            </td>
+            <td>
+            ${p.no_hp ? '<a href="https://wa.me/' + p.no_hp.replace(/[^0-9]/g, '') + '" target="_blank" class="text-decoration-none text-success"><i class="bi bi-whatsapp me-1"></i>' + escapeHtml(p.no_hp) + '</a>' : '<span class="text-muted">-</span>'}
+            </td>
+            <td class="text-end">
+            <span class="badge bg-danger fs-6 font-monospace">${p.sisa_format}</span>
+            </td>
+            <td class="text-center">
+            <button type="button"
+            class="btn btn-sm btn-success fw-bold"
+            onclick="openModalBayarUtang(${p.id}, '${escapeHtml(p.nama).replace(/'/g, "\\'")}', ${p.sisa_utang})">
+            <i class="bi bi-cash-coin"></i> Bayar
+            </button>
+            </td>
+            </tr>
+            `;
         });
+
+        tbody.innerHTML = html;
+    })
+    .catch(err => {
+        loading.style.display = 'none';
+        tbody.innerHTML = `
+        <tr>
+        <td colspan="4" class="text-center text-danger py-3">
+        Terjadi kesalahan koneksi.
+        </td>
+        </tr>
+        `;
+        console.error('Error load daftar utang:', err);
+    });
 }
 
 
-/**
- * Buka modal bayar utang
- */
 function openModalBayarUtang(id, nama, sisaUtang) {
     document.getElementById('bayarUtangPelangganId').value = id;
     document.getElementById('bayarUtangNama').innerText = nama;
@@ -1788,23 +1292,20 @@ function openModalBayarUtang(id, nama, sisaUtang) {
 
     currentSisaUtangKasir = sisaUtang;
 
-    // Sembunyikan modal daftar, tampilkan modal bayar
-    let modalDaftar = bootstrap.Modal.getInstance(document.getElementById('modalDaftarUtang'));
+    let modalDaftar = bootstrap.Modal.getInstance(
+        document.getElementById('modalDaftarUtang')
+    );
     if (modalDaftar) modalDaftar.hide();
 
     let modalBayar = new bootstrap.Modal(document.getElementById('modalBayarUtang'));
     modalBayar.show();
 
-    // Focus ke input nominal
     setTimeout(() => {
         document.getElementById('bayarUtangNominal').focus();
     }, 400);
 }
 
 
-/**
- * Set nominal bayar dari tombol cepat
- */
 function setBayarUtangNominal(val) {
     let input = document.getElementById('bayarUtangNominal');
     input.value = new Intl.NumberFormat('id-ID').format(val);
@@ -1812,9 +1313,6 @@ function setBayarUtangNominal(val) {
 }
 
 
-/**
- * Set nominal = sisa utang (uang pas)
- */
 function setBayarUtangPas() {
     let input = document.getElementById('bayarUtangNominal');
     input.value = new Intl.NumberFormat('id-ID').format(Math.round(currentSisaUtangKasir));
@@ -1822,35 +1320,29 @@ function setBayarUtangPas() {
 }
 
 
-/**
- * Submit pembayaran utang
- */
 function submitBayarUtang() {
     let pelangganId = document.getElementById('bayarUtangPelangganId').value;
     let nominalRaw  = document.getElementById('bayarUtangNominal').value.replace(/\./g, '');
     let nominal     = parseFloat(nominalRaw) || 0;
     let keterangan  = document.getElementById('bayarUtangKeterangan').value.trim();
 
-    // Validasi
     if (nominal <= 0) {
         document.getElementById('alertBayarUtang').innerHTML =
-            '<div class="alert alert-danger py-2 small mb-0">Nominal harus lebih dari 0!</div>';
+        '<div class="alert alert-danger py-2 small mb-0">Nominal harus lebih dari 0!</div>';
         return;
     }
 
     if (nominal > currentSisaUtangKasir) {
         document.getElementById('alertBayarUtang').innerHTML =
-            '<div class="alert alert-danger py-2 small mb-0">Nominal melebihi sisa utang!</div>';
+        '<div class="alert alert-danger py-2 small mb-0">Nominal melebihi sisa utang!</div>';
         return;
     }
 
-    // Disable button sementara
     let btnSubmit = document.querySelector('#modalBayarUtang .btn-success');
     let originalHtml = btnSubmit.innerHTML;
     btnSubmit.disabled = true;
     btnSubmit.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Menyimpan...';
 
-    // Set tanggal sekarang
     let now = new Date();
     let yyyy = now.getFullYear();
     let mm = String(now.getMonth() + 1).padStart(2, '0');
@@ -1860,7 +1352,6 @@ function submitBayarUtang() {
     let ss = String(now.getSeconds()).padStart(2, '0');
     let tanggal = `${yyyy}-${mm}-${dd} ${hh}:${ii}:${ss}`;
 
-    // Kirim
     let formData = new FormData();
     formData.append('pelanggan_id', pelangganId);
     formData.append('nominal', nominal);
@@ -1877,32 +1368,33 @@ function submitBayarUtang() {
         btnSubmit.innerHTML = originalHtml;
 
         if (res.status === 'success') {
-            // Tutup modal bayar
-            let modalBayar = bootstrap.Modal.getInstance(document.getElementById('modalBayarUtang'));
+            let modalBayar = bootstrap.Modal.getInstance(
+                document.getElementById('modalBayarUtang')
+            );
             if (modalBayar) modalBayar.hide();
 
-            // Alert seperti di halaman pelanggan
             alert(res.message);
 
-            // Buka kembali modal daftar + refresh
-            let modalDaftar = new bootstrap.Modal(document.getElementById('modalDaftarUtang'));
+            let modalDaftar = new bootstrap.Modal(
+                document.getElementById('modalDaftarUtang')
+            );
             modalDaftar.show();
 
-            // Reload data
             setTimeout(() => {
                 loadDaftarUtang(document.getElementById('inputSearchUtang').value);
             }, 300);
 
         } else {
             document.getElementById('alertBayarUtang').innerHTML =
-                '<div class="alert alert-danger py-2 small mb-0">' + (res.message || 'Gagal menyimpan') + '</div>';
+            '<div class="alert alert-danger py-2 small mb-0">' +
+            (res.message || 'Gagal menyimpan') + '</div>';
         }
     })
     .catch(err => {
         btnSubmit.disabled = false;
         btnSubmit.innerHTML = originalHtml;
         document.getElementById('alertBayarUtang').innerHTML =
-            '<div class="alert alert-danger py-2 small mb-0">Terjadi kesalahan koneksi.</div>';
+        '<div class="alert alert-danger py-2 small mb-0">Terjadi kesalahan koneksi.</div>';
         console.error('Error bayar utang:', err);
     });
 }

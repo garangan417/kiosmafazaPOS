@@ -105,6 +105,15 @@ $current_page = $_SERVER['REQUEST_URI'];
              href="<?= BASE_URL; ?>">Home</a>
         </li>
 
+<button type="button"
+class="btn btn-outline-warning text-dark px-3"
+onclick="openKelolaFavorit()">
+<i class="bi bi-star-fill me-1"></i>
+<span class="d-none d-md-inline">Favorit</span>
+<span class="d-md-none">Favorit</span>
+</button>
+
+
         <!-- Menu Pelanggan -->
         <li class="nav-item">
           <a class="nav-link <?= stristr($current_page, '/pelanggan/') ? 'active' : ''; ?>" 
@@ -223,6 +232,8 @@ $current_page = $_SERVER['REQUEST_URI'];
             </a>
           </li>
         <?php endif; ?>
+
+
 
         <!-- Tombol Logout -->
         <li class="nav-item ms-lg-2">
