@@ -1,8 +1,25 @@
 <footer class="bg-white text-center text-lg-start mt-auto py-3 border-top">
-<div class="container text-center text-muted small">
-&copy; <?= date('Y'); ?> Mafaza App. All rights reserved.
-</div>
+  <div class="container text-center text-muted small">
+    <div>
+      &copy; <?= date('Y'); ?> <strong>Mafaza App</strong>. All rights reserved.
+    </div>
+    <div class="mt-1 style="font-size: 0.8rem;">
+      Licensed under <a href="https://github.com/garangan417/kiosmafazaPOS/blob/main/LICENSE" class="text-decoration-none text-secondary" target="_blank" rel="noopener">Non-Commercial License</a> | 
+      Developed by <a href="https://github.com/garangan417" class="text-decoration-none text-secondary" target="_blank" rel="noopener">Garangan417</a>
+    </div>
+  </div>
 </footer>
+
+<!-- 
+  ========================================================================
+  MAFAZA APP - POINT OF SALE SYSTEM
+  Copyright (c) <?= date('Y'); ?> Garangan417. All Rights Reserved.
+  
+  This software is licensed under the Non-Commercial Public License (NC-PL).
+  You may study, modify, and use this code for non-commercial purposes only.
+  Removing or altering authorship notices is strictly prohibited.
+  ========================================================================
+-->
 
 <script src="/assets/js/helper.js"></script>
 
@@ -17,10 +34,10 @@ document.body.addEventListener('htmx:afterOnLoad', function(evt) {
     alerts.forEach(alertEl => {
       alertEl.style.pointerEvents = 'auto';
 
-    setTimeout(() => {
-      alertEl.classList.remove('show');
-      setTimeout(() => alertEl.remove(), 150);
-    }, 3000);
+      setTimeout(() => {
+        alertEl.classList.remove('show');
+        setTimeout(() => alertEl.remove(), 150);
+      }, 3000);
     });
   }
 });

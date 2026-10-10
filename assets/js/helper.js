@@ -1,3 +1,10 @@
+/**
+ * @project   Kios Mafaza POS - Helper Utilities
+ * @author    Garangan417
+ * @license   Non-Commercial Public License (NC-PL)
+ * @copyright (c) 2026 Garangan417. All Rights Reserved.
+ */
+
 // ==========================================
 // GLOBAL STATE
 // ==========================================

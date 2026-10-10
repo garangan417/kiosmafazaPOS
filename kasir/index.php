@@ -1,4 +1,15 @@
 <?php
+
+/**
+ * Project Name: Kios Mafaza POS
+ * File Description: Main entry point / Configuration
+ * 
+ * Copyright (c) 2026 Garangan417. All Rights Reserved.
+ * Licensed under the Non-Commercial Public License (NC-PL).
+ * 
+ * This software is free for educational and personal use. 
+ * Commercial exploitation or redistribution without permission is strictly prohibited.
+ */
 // kasir/index.php
 require_once __DIR__ . '/../config.php';
 require_once BASE_PATH . 'database/db_barang.php';
@@ -197,7 +208,7 @@ style="z-index: 1050; display: none;">
 </div>
 
 <!-- KOLOM KANAN: RINGKASAN & PEMBAYARAN -->
-<div class="col-lg-5">
+<div class="col-lg-5 ">
 
 <!-- BARANG FAVORIT / QUICK BUTTONS -->
 <div class="card border-0 shadow-sm mb-3">
@@ -309,10 +320,10 @@ title="Tambah Pelanggan Baru">
 <label class="form-label fw-bold small">Uang Diterima (Rp)</label>
 <input type="text" id="inputBayar" class="form-control form-control-lg font-monospace fw-bold" placeholder="0" oninput="formatInputRupiahJS(this); hitungKembalian()">
 <div class="d-flex gap-2 mt-2">
-<button class="btn btn-sm btn-outline-secondary flex-fill" onclick="setNominalBayar('PAS')">Uang Pas</button>
-<button class="btn btn-sm btn-outline-secondary flex-fill" onclick="setNominalBayar(20000)">20rb</button>
-<button class="btn btn-sm btn-outline-secondary flex-fill" onclick="setNominalBayar(50000)">50rb</button>
-<button class="btn btn-sm btn-outline-secondary flex-fill" onclick="setNominalBayar(100000)">100rb</button>
+<button class="btn btn-sm btn-outline-primary flex-fill" onclick="setNominalBayar('PAS')">Uang Pas</button>
+<button class="btn btn-sm btn-outline-primary flex-fill" onclick="setNominalBayar(20000)">20rb</button>
+<button class="btn btn-sm btn-outline-primary flex-fill" onclick="setNominalBayar(50000)">50rb</button>
+<button class="btn btn-sm btn-outline-danger flex-fill" onclick="setNominalBayar(100000)">100rb</button>
 </div>
 </div>
 

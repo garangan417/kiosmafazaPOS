@@ -1,4 +1,16 @@
 <?php
+
+/**
+ * Project Name: Kios Mafaza POS
+ * File Description: Main entry point / Configuration
+ * 
+ * Copyright (c) 2026 Garangan417. All Rights Reserved.
+ * Licensed under the Non-Commercial Public License (NC-PL).
+ * 
+ * This software is free for educational and personal use. 
+ * Commercial exploitation or redistribution without permission is strictly prohibited.
+ */
+
 require_once __DIR__ . '/config.php';
 require_once BASE_PATH . 'database/db_pelanggan.php';
 
