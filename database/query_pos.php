@@ -1,7 +1,11 @@
 <?php
-// database2/query_pos.php
+// database/query_pos.php
 
 require_once __DIR__ . '/db_barang.php';
+
+// ============================================================
+// PENGATURAN STOK
+// ============================================================
 
 function getPengaturanStok(PDO $pdo): array {
     try {
@@ -42,6 +46,10 @@ function setIzinkanStokMinus(PDO $pdo, bool $status): bool {
     return $stmt->execute([$val]);
 }
 
+// ============================================================
+// BARANG FAVORIT
+// ============================================================
+
 function getBarangFavorit(PDO $pdo): array {
     $sql = "SELECT 
                 bk.id AS kemasan_id,
@@ -70,6 +78,10 @@ function getBarangFavorit(PDO $pdo): array {
     $stmt->execute();
     return $stmt->fetchAll(PDO::FETCH_ASSOC);
 }
+
+// ============================================================
+// SIMPAN PENJUALAN
+// ============================================================
 
 function simpanPenjualan(PDO $pdo, array $header, array $items): array {
     $cfgStok    = getPengaturanStok($pdo);
@@ -185,7 +197,51 @@ function simpanPenjualan(PDO $pdo, array $header, array $items): array {
                 floatval($item['subtotal'])
             ]);
 
-       function simpanReturPenjualan(PDO $pdo, array $header, array $items): array {
+            // Update Stok
+            if ($stokAktif && $kemasanId > 0) {
+                $stmtCurStok->execute([$kemasanId]);
+                $stokSebelum = intval($stmtCurStok->fetchColumn() ?: 0);
+
+                $qtyJual = intval($item['qty']);
+                $stokSesudah = $stokSebelum - $qtyJual;
+
+                if (!$bolehMinus && $stokSesudah < 0) {
+                    $stokSesudah = 0;
+                }
+
+                $ketMutasi = 'Penjualan No. Faktur: ' . $header['no_faktur'];
+                $stmtMutasi->execute([$kemasanId, $qtyJual, $stokSebelum, $stokSesudah, $ketMutasi]);
+
+                $stmtUpdStok->execute([$stokSesudah, $kemasanId]);
+            }
+        }
+
+        // Commit HANYA jika transaksi dimulai di dalam fungsi ini
+        if (!$alreadyInTransaction && $pdo->inTransaction()) {
+            $pdo->commit();
+        }
+
+        return [
+            'status'       => true,
+            'penjualan_id' => $penjualanId,
+            'no_faktur'    => $header['no_faktur'],
+            'message'      => 'Transaksi berhasil tersimpan!'
+        ];
+
+    } catch (PDOException $e) {
+        // Rollback HANYA jika transaksi dimulai di dalam fungsi ini
+        if (!$alreadyInTransaction && $pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        return ['status' => false, 'message' => 'Gagal transaksi: ' . $e->getMessage()];
+    }
+}
+
+// ============================================================
+// SIMPAN RETUR PENJUALAN (DIPINDAH KE LUAR — BUG FIX)
+// ============================================================
+
+function simpanReturPenjualan(PDO $pdo, array $header, array $items): array {
     $cfgStok   = getPengaturanStok($pdo);
     $stokAktif = $cfgStok['fitur_stok'];
 
@@ -263,47 +319,10 @@ function simpanPenjualan(PDO $pdo, array $header, array $items): array {
         return ['status' => false, 'message' => 'Gagal memproses retur: ' . $e->getMessage()];
     }
 }
-    
 
-            // Update Stok
-            if ($stokAktif && $kemasanId > 0) {
-                $stmtCurStok->execute([$kemasanId]);
-                $stokSebelum = intval($stmtCurStok->fetchColumn() ?: 0);
-
-                $qtyJual = intval($item['qty']);
-                $stokSesudah = $stokSebelum - $qtyJual;
-
-                if (!$bolehMinus && $stokSesudah < 0) {
-                    $stokSesudah = 0;
-                }
-
-                $ketMutasi = 'Penjualan No. Faktur: ' . $header['no_faktur'];
-                $stmtMutasi->execute([$kemasanId, $qtyJual, $stokSebelum, $stokSesudah, $ketMutasi]);
-
-                $stmtUpdStok->execute([$stokSesudah, $kemasanId]);
-            }
-        }
-
-        // Commit HANYA jika transaksi dimulai di dalam fungsi ini
-        if (!$alreadyInTransaction && $pdo->inTransaction()) {
-            $pdo->commit();
-        }
-
-        return [
-            'status'       => true,
-            'penjualan_id' => $penjualanId,
-            'no_faktur'    => $header['no_faktur'],
-            'message'      => 'Transaksi berhasil tersimpan!'
-        ];
-
-    } catch (PDOException $e) {
-        // Rollback HANYA jika transaksi dimulai di dalam fungsi ini
-        if (!$alreadyInTransaction && $pdo->inTransaction()) {
-            $pdo->rollBack();
-        }
-        return ['status' => false, 'message' => 'Gagal transaksi: ' . $e->getMessage()];
-    }
-}
+// ============================================================
+// REKAP PENJUALAN
+// ============================================================
 
 function getRekapPenjualan(PDO $pdo, string $tglAwal, string $tglAkhir): array {
     $sql = "

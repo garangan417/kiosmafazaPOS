@@ -182,7 +182,11 @@ $riwayat = array_reverse($riwayatAsc);
       </div>
 
       <!-- Footer Modal -->
-      <div class="modal-footer bg-light">
+           <!-- Footer Modal -->
+      <div class="modal-footer bg-light d-flex justify-content-between">
+        <button type="button" class="btn btn-outline-dark btn-sm fw-bold" onclick="cetakDetailUtang(<?= $pelanggan['id']; ?>)">
+            <i class="bi bi-printer"></i> Cetak Rincian
+        </button>
         <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Tutup</button>
       </div>
 
@@ -213,5 +217,11 @@ function setWaktuBrowserDetailUtang(formElement) {
   if (inputWaktu) {
     inputWaktu.value = `${yyyy}-${mm}-${dd} ${hh}:${ii}:${ss}`;
   }
+}
+
+function cetakDetailUtang(id) {
+    // Buka halaman cetak di tab/jendela baru
+    const url = '<?= BASE_URL; ?>pelanggan/cetak_utang.php?id=' + id;
+    window.open(url, '_blank', 'width=500,height=800');
 }
 </script>

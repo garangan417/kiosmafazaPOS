@@ -1,14 +1,19 @@
 <?php
-// kasir/laporantes.php
+// kasir/laporan.php
 ini_set('display_errors', 1);
 error_reporting(E_ALL);
 
 require_once __DIR__ . '/../config.php';
 require_once BASE_PATH . 'database/db_barang.php';
+require_once BASE_PATH . 'database/query_grafik.php';
 
 // Filter Tanggal (Default: Hari Ini)
 $tglMulai   = $_GET['tgl_mulai'] ?? date('Y-m-d');
 $tglSelesai = $_GET['tgl_selesai'] ?? date('Y-m-d');
+
+// Validasi format tanggal
+if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $tglMulai))   $tglMulai   = date('Y-m-d');
+if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $tglSelesai)) $tglSelesai = date('Y-m-d');
 
 // Parameter Paginasi Tunggal
 $limit  = 20;
@@ -54,13 +59,13 @@ try {
     $totalRows  = (int)$stmtCount->fetchColumn();
     $totalPages = max(1, (int) ceil($totalRows / $limit));
 
-    // 3. CLAMP $page agar tidak melebihi total halaman
+    // 3. CLAMP $page
     if ($page > $totalPages) {
         $page = $totalPages;
         $offset = ($page - 1) * $limit;
     }
 
-    // 4. QUERY RIWAYAT PENJUALAN (SINGLE LIST)
+    // 4. QUERY RIWAYAT PENJUALAN
     $sqlList = "SELECT 
                     p.*,
                     (SELECT COUNT(id) FROM penjualan_detail WHERE penjualan_id = p.id) AS item_count,
@@ -97,7 +102,7 @@ try {
     $stmtList->execute();
     $transaksiList = $stmtList->fetchAll(PDO::FETCH_ASSOC);
 
-    // 5. SUSUN ARRAY $pagination UNTUK PARTIALS
+    // 5. PAGINATION ARRAY
     $pagination = [
         'total_items'  => $totalRows,
         'total_pages'  => $totalPages,
@@ -106,6 +111,9 @@ try {
         'from'         => $totalRows > 0 ? $offset + 1 : 0,
         'to'           => min($offset + $limit, $totalRows),
     ];
+
+    // 6. BUILD DATA GRAFIK
+    $grafikData = buildGrafikDataLaporan($pdoBarang, $tglMulai, $tglSelesai);
 
 } catch (PDOException $e) {
     die("Error Database: " . $e->getMessage());
@@ -180,6 +188,12 @@ require_once BASE_PATH . 'partials/header.php';
     </div>
   </div>
 
+  <!-- ============================================ -->
+  <!-- GRAFIK PENJUALAN (Chart.js lokal, no CDN) -->
+  <!-- ============================================ -->
+  <script src="<?= BASE_URL; ?>assets/js/chart.umd.js"></script>
+ <?php require BASE_PATH . 'partials/laporan_grafik.php'; ?> 
+
   <!-- TABEL RIWAYAT TRANSAKSI -->
   <div class="card shadow-sm border-0">
     <div class="card-header bg-white py-3 border-bottom-0 d-flex justify-content-between align-items-center">
@@ -252,7 +266,7 @@ require_once BASE_PATH . 'partials/header.php';
       </table>
     </div>
 
-    <!-- PAGINASI (pakai partial) -->
+    <!-- PAGINASI -->
     <?php if ($pagination['total_pages'] > 1): ?>
       <div class="card-footer bg-white py-3 border-top-0">
         <?php require BASE_PATH . 'partials/pagination.php'; ?>

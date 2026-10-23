@@ -13,6 +13,7 @@
 
 require_once __DIR__ . '/config.php';
 require_once BASE_PATH . 'database/db_pelanggan.php';
+require_once BASE_PATH . 'database/db_barang.php';      // ← BARU: untuk grafik penjualan ($pdoBarang)
 
 // Cek dan gunakan database transaksi kas jika ada, fallback ke $pdoPelanggan
 if (file_exists(BASE_PATH . 'database/db.php')) {
@@ -117,7 +118,12 @@ require_once BASE_PATH . 'partials/header.php';
     </div>
   </div>
 
-<!-- Daftar Pelanggan Berutang -->
+  <!-- ============================================ -->
+  <!-- GRAFIK PENJUALAN (partial self-contained)    -->
+  <!-- ============================================ -->
+  <?php require BASE_PATH . 'partials/grafik_penjualan.php'; ?>
+
+  <!-- Daftar Pelanggan Berutang -->
   <div class="card shadow-sm border-0">
     <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
       <h5 class="card-title mb-0 fw-bold text-danger">
@@ -130,7 +136,6 @@ require_once BASE_PATH . 'partials/header.php';
       <table class="table table-hover align-middle mb-0">
         <thead class="table-light">
           <tr>
-            <!-- URUTAN DITUKAR: Nama -> Sisa Utang -> No. HP -> Aksi -->
             <th>Nama Pelanggan</th>
             <th class="text-start">Sisa Utang</th>
             <th>No. HP</th>
@@ -151,22 +156,18 @@ require_once BASE_PATH . 'partials/header.php';
                   onclick="window.location.href='<?= BASE_URL; ?>pelanggan/'" 
                   style="cursor: pointer;">
                 
-                <!-- 1. Nama Pelanggan -->
                 <td>
                   <span class="fw-bold text-dark d-block"><?= htmlspecialchars($row['nama']); ?></span>
                 </td>
 
-                <!-- 2. Sisa Utang (Pindah ke Posisi Ke-2) -->
                 <td class="fw-bold text-danger fs-6">
                   <?= formatRupiah($row['total_utang']); ?>
                 </td>
 
-                <!-- 3. No. HP (Pindah ke Posisi Ke-3) -->
                 <td class="text-muted small">
                   <?= htmlspecialchars($row['no_hp'] ?: '-'); ?>
                 </td>
 
-                <!-- 4. Aksi -->
                 <td class="text-center" onclick="event.stopPropagation();">
                   <a href="<?= BASE_URL; ?>pelanggan/" 
                      class="btn btn-sm btn-outline-secondary">

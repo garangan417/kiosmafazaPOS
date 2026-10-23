@@ -186,7 +186,14 @@ style="z-index: 1050; display: none;">
 <div class="card border-0 shadow-sm">
 <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
 <h6 class="fw-bold mb-0"><i class="bi bi-cart3 text-primary me-2"></i>Keranjang Belanja</h6>
-<button class="btn btn-sm btn-outline-danger" onclick="clearCart()"><i class="bi bi-trash me-1"></i> Kosongkan</button>
+<div class="d-flex gap-2">
+  <button type="button" class="btn btn-sm btn-success fw-bold" onclick="openModalDaftarUtang()">
+    <i class="bi bi-cash-coin me-1"></i> Daftar Utang
+  </button>
+  <button type="button" class="btn btn-sm btn-outline-danger" onclick="clearCart()">
+    <i class="bi bi-trash me-1"></i> Kosongkan
+  </button>
+</div>
 </div>
 <div class="table-responsive" style="min-height: 250px; max-height: 330px; overflow-y: auto;">
 <table class="table table-hover align-middle mb-0" id="cartTable">
@@ -219,7 +226,7 @@ style="z-index: 1050; display: none;">
 <?php if (!empty($barangFavorit)): ?>
 <!-- Container Scroll Vertikal (Maksimal 200px / sesuaikan kebutuhan) -->
 <div style="max-height: 200px; overflow-y: auto;">
-<table class="table table-hover align-middle mb-0" style="font-size: 0.875rem;">
+<table class="table table-hover table-striped align-middle mb-0" style="font-size: 0.875rem;">
 <tbody class="border-top-0">
 <?php foreach ($barangFavorit as $fav): ?>
 <tr style="cursor: pointer;" onclick='addToCart(<?= json_encode($fav); ?>)'>
@@ -628,5 +635,158 @@ window.STOK_AKTIF = <?= $stokAktif ? 'true' : 'false'; ?>;
 
 <!-- File JS Eksternal -->
 <script src="/assets/js/html5-qrcode.min.js"></script>
+<!-- ============================================================ -->
 
+<!-- ========================================== -->
+<!-- MODAL DAFTAR UTANG AKTIF                    -->
+<!-- ========================================== -->
+<div class="modal fade" id="modalDaftarUtang" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content border-0 shadow">
+
+      <div class="modal-header bg-success text-white py-2">
+        <h6 class="modal-title fw-bold">
+          <i class="bi bi-cash-coin me-2"></i>Daftar Pelanggan Berutang
+        </h6>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" onclick="resetFocusScan()"></button>
+      </div>
+
+      <div class="modal-body p-3">
+
+        <!-- Summary -->
+        <div class="row g-2 mb-3">
+          <div class="col-6">
+            <div class="p-2 bg-light rounded border">
+              <small class="text-muted d-block">Jumlah Pelanggan</small>
+              <strong id="utangTotalCount" class="fs-5">0</strong>
+            </div>
+          </div>
+          <div class="col-6">
+            <div class="p-2 bg-danger-subtle rounded border">
+              <small class="text-muted d-block">Total Piutang</small>
+              <strong id="utangGrandTotal" class="fs-5 text-danger">Rp 0</strong>
+            </div>
+          </div>
+        </div>
+
+        <!-- Search -->
+        <div class="mb-3">
+          <input type="text"
+                 id="inputSearchUtang"
+                 class="form-control form-control-sm"
+                 placeholder="Cari nama pelanggan / no HP..."
+                 autocomplete="off"
+                 oninput="debounceCariUtang(this.value)">
+        </div>
+
+        <!-- Loading -->
+        <div id="utangLoading" class="text-center py-3" style="display:none;">
+          <span class="spinner-border spinner-border-sm text-primary"></span>
+          <small class="text-muted ms-2">Memuat...</small>
+        </div>
+
+        <!-- Tabel dengan scroll internal -->
+        <div class="table-responsive" style="max-height: 60vh; overflow-y: auto;">
+          <table class="table table-hover table-striped align-middle mb-0">
+            <thead class="table-light sticky-top">
+              <tr>
+                <th>Nama</th>
+                <th>No. HP</th>
+                <th class="text-end">Sisa Utang</th>
+                <th class="text-center" style="width: 90px;">Aksi</th>
+              </tr>
+            </thead>
+            <tbody id="utangListBody">
+              <!-- Dinamis via JS (helper.js loadDaftarUtang) -->
+            </tbody>
+          </table>
+        </div>
+
+      </div>
+
+      <div class="modal-footer py-2 bg-light">
+        <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal" onclick="resetFocusScan()">Tutup</button>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+
+<!-- ========================================== -->
+<!-- MODAL BAYAR / CICIL UTANG                   -->
+<!-- ========================================== -->
+<div class="modal fade" id="modalBayarUtang" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content border-0 shadow">
+
+      <div class="modal-header bg-success text-white py-2">
+        <h6 class="modal-title fw-bold">
+          <i class="bi bi-cash-coin me-2"></i>Bayar / Cicil Utang
+        </h6>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+
+      <div class="modal-body p-3">
+
+        <input type="hidden" id="bayarUtangPelangganId">
+
+        <!-- Info Pelanggan & Sisa -->
+        <div class="p-2 mb-3 bg-light rounded border">
+          <strong class="d-block text-dark" id="bayarUtangNama">-</strong>
+          <small class="text-muted">
+            Sisa Utang: <strong id="bayarUtangSisa" class="text-danger">Rp 0</strong>
+          </small>
+        </div>
+
+        <!-- Input Nominal -->
+        <div class="mb-3">
+          <label class="form-label small fw-bold">Nominal Bayar</label>
+          <div class="input-group">
+            <span class="input-group-text fw-bold">Rp</span>
+            <input type="text"
+                   id="bayarUtangNominal"
+                   class="form-control form-control-lg text-end font-monospace fw-bold"
+                   placeholder="0"
+                   oninput="formatInputRupiahJS(this)"
+                   autocomplete="off">
+          </div>
+
+          <!-- Tombol Cepat -->
+          <div class="d-flex gap-1 mt-2 flex-wrap">
+            <button type="button" class="btn btn-sm btn-success fw-bold" onclick="setBayarUtangPas()">
+              <i class="bi bi-check-lg"></i> Uang Pas
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="setBayarUtangNominal(10000)">10rb</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="setBayarUtangNominal(20000)">20rb</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="setBayarUtangNominal(50000)">50rb</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="setBayarUtangNominal(100000)">100rb</button>
+          </div>
+        </div>
+
+        <!-- Keterangan -->
+        <div class="mb-2">
+          <label class="form-label small fw-bold">Keterangan (Opsional)</label>
+          <input type="text"
+                 id="bayarUtangKeterangan"
+                 class="form-control form-control-sm"
+                 placeholder="Catatan...">
+        </div>
+
+        <div id="alertBayarUtang"></div>
+
+      </div>
+
+      <div class="modal-footer py-2 bg-light">
+        <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Batal</button>
+        <button type="button" class="btn btn-sm btn-success fw-bold" onclick="submitBayarUtang()">
+          <i class="bi bi-check-lg me-1"></i> Bayar Sekarang
+        </button>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
 <?php require_once BASE_PATH . 'partials/kasirfooter.php'; ?>
