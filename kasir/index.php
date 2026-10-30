@@ -137,6 +137,25 @@ require_once BASE_PATH . 'partials/header.php';
   padding: 0.15rem 0.4rem;
   font-family: monospace;
 }
+
+/* ============================================================ */
+/* BARIS BARANG HARGA UNSET (Belum di-set harganya)             */
+/* ============================================================ */
+.search-dropdown .dropdown-item-custom.item-unset {
+  background: #fff5f5;
+  border-left-color: #dc3545 !important;
+}
+.search-dropdown .dropdown-item-custom.item-unset:hover {
+  background: #dc3545;
+}
+.search-dropdown .dropdown-item-custom.item-unset:hover .item-nama,
+.search-dropdown .dropdown-item-custom.item-unset:hover .item-subinfo,
+.search-dropdown .dropdown-item-custom.item-unset:hover .item-harga {
+  color: #ffffff !important;
+}
+.search-dropdown .dropdown-item-custom.item-unset:hover .item-harga i {
+  color: #ffffff !important;
+}
 </style>
 
 <div class="container-fluid my-3 px-4">

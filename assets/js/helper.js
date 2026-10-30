@@ -478,19 +478,37 @@ function showSearchDropdown(data) {
     data.forEach((item, index) => {
         let teksSatuan = item.satuan ? item.satuan : item.nama_kemasan;
         let harga = Math.round(item.harga_ecer || item.harga_jual || 0);
+        let isUnset = parseInt(item.is_harga_unset) === 1 || harga <= 0;
+
+        // Baris unset: klik tidak menambah ke cart, tapi memunculkan peringatan
+        let klikAttr = isUnset
+            ? `onclick="peringatanHargaUnset(${index}); return false;"`
+            : `onclick="selectFromDropdown(${index}); return false;"`;
+
+        let hargaHtml = isUnset
+            ? `<div class="item-harga text-danger" style="font-size:0.8rem;">
+                 <i class="bi bi-exclamation-triangle-fill"></i> Belum Set
+               </div>`
+            : `<div class="item-harga">Rp ${harga.toLocaleString('id-ID')}</div>`;
+
+        let badgeHtml = isUnset
+            ? `<span class="badge bg-danger ms-1" style="font-size:0.65rem;">Harga Belum Di-set</span>`
+            : '';
 
         html += `
         <a href="#"
-        class="dropdown-item-custom"
-        onclick="selectFromDropdown(${index}); return false;">
+        class="dropdown-item-custom ${isUnset ? 'item-unset' : ''}"
+        ${klikAttr}
+        style="${isUnset ? 'opacity:0.85;' : ''}">
         <div class="flex-grow-1" style="min-width: 0;">
         <div class="item-nama">${escapeHtml(item.nama_barang)}</div>
         <div class="item-subinfo">
         ${escapeHtml(teksSatuan || '')}${item.isi ? ' • isi ' + escapeHtml(item.isi) : ''}
+        ${badgeHtml}
         </div>
         </div>
         <div class="text-end">
-        <div class="item-harga">Rp ${harga.toLocaleString('id-ID')}</div>
+        ${hargaHtml}
         </div>
         </a>
         `;
@@ -538,10 +556,69 @@ function selectFromDropdown(index) {
 
 
 // ==========================================
+// PERINGATAN HARGA BELUM DI-SET (KASIR)
+// ==========================================
+function peringatanHargaUnset(index) {
+    let item = currentSearchResults[index];
+    if (!item) return;
+
+    Swal.fire({
+        icon: 'warning',
+        title: 'Harga Belum Di-set!',
+        html: `
+            <div class="text-start">
+                <p class="mb-2">
+                    <strong>${escapeHtml(item.nama_barang)}</strong><br>
+                    <small class="text-muted">${escapeHtml(item.nama_kemasan || '')} ${item.isi ? '• isi ' + escapeHtml(item.isi) + ' ' + escapeHtml(item.satuan || '') : ''}</small>
+                </p>
+                <div class="alert alert-danger py-2 mb-0 small">
+                    <i class="bi bi-exclamation-triangle-fill me-1"></i>
+                    Harga jual eceran barang ini belum diatur di sistem.
+                    Barang <strong>tidak dapat dijual</strong> sebelum harga di-set.
+                </div>
+                <p class="small text-muted mt-2 mb-0">
+                    Hubungi admin atau buka menu <strong>Kelola Harga</strong> untuk mengatur harga.
+                </p>
+            </div>
+        `,
+        confirmButtonText: '<i class="bi bi-check-lg me-1"></i> OK, Mengerti',
+        confirmButtonColor: '#dc3545',
+        allowOutsideClick: true
+    }).then(() => {
+        resetFocusScan();
+    });
+}
+
+
+// ==========================================
 // KERANJANG BELANJA
 // ==========================================
 
 function addToCart(item) {
+    // ✅ VALIDASI: Block barang yang harganya belum di-set (kecuali jasa/PPOB)
+    let hargaCek = parseFloat(item.harga_ecer || item.harga_jual || 0);
+    let isJasaCek = item.is_jasa || false;
+
+    if (!isJasaCek && (parseInt(item.is_harga_unset) === 1 || hargaCek <= 0)) {
+        Swal.fire({
+            icon: 'warning',
+            title: 'Harga Belum Di-set!',
+            html: `
+                <div class="text-start">
+                    <p class="mb-2"><strong>${escapeHtml(item.nama_barang || '')}</strong></p>
+                    <div class="alert alert-danger py-2 mb-0 small">
+                        <i class="bi bi-exclamation-triangle-fill me-1"></i>
+                        Barang ini belum memiliki harga jual. Tidak dapat ditambahkan ke keranjang.
+                    </div>
+                </div>
+            `,
+            confirmButtonText: 'OK',
+            confirmButtonColor: '#dc3545'
+        }).then(() => resetFocusScan());
+        clearScan();
+        return; // STOP - jangan masukkan ke cart
+    }
+
     let isJasa = item.is_jasa || false;
 
     let existingIndex = cart.findIndex(c =>
@@ -936,6 +1013,27 @@ function simpanAttachBarcode() {
 function prosesCheckout() {
     if (cart.length === 0) {
         alert('Keranjang belanja masih kosong!');
+        return;
+    }
+
+    // ✅ VALIDASI: Cek ulang seluruh cart, tolak jika ada item harga 0
+    let itemBermasalah = cart.filter(it =>
+        !it.is_jasa && (parseFloat(it.harga_jual) <= 0)
+    );
+    if (itemBermasalah.length > 0) {
+        let namaList = itemBermasalah.map(it =>
+            `<li><strong>${escapeHtml(it.nama_barang)}</strong></li>`
+        ).join('');
+        Swal.fire({
+            icon: 'error',
+            title: 'Transaksi Ditolak!',
+            html: `
+                <p class="mb-2">Ada item dengan harga belum di-set:</p>
+                <ul class="text-start small">${namaList}</ul>
+                <p class="small text-muted mb-0">Hapus item tersebut atau set harganya dulu di menu Kelola Harga.</p>
+            `,
+            confirmButtonColor: '#dc3545'
+        });
         return;
     }
 

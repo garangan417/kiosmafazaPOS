@@ -15,6 +15,7 @@ if (empty($q)) {
 try {
     // Cari berdasarkan barcode (exact) atau nama barang/kemasan (like)
     // PERBAIKAN: Hitung harga_beli per PCS / unit kecil (dibagi isi kemasan)
+    // TAMBAHAN: Flag is_harga_unset untuk deteksi barang yang belum di-set harganya
     $sql = "SELECT 
                 bk.id AS kemasan_id,
                 b.nama_barang,
@@ -31,6 +32,7 @@ try {
                 COALESCE(h.harga_jual_ecer, 0) AS harga_ecer,
                 COALESCE(h.harga_jual_grosir, 0) AS harga_grosir,
                 COALESCE(h.min_qty_grosir, 1) AS min_qty_grosir,
+                (h.harga_jual_ecer IS NULL OR h.harga_jual_ecer <= 0) AS is_harga_unset,
                 (SELECT barcode FROM barang_barcode WHERE barang_kemasan_id = bk.id LIMIT 1) AS barcode
             FROM barang_kemasan bk
             JOIN barang b ON bk.barang_id = b.id
@@ -45,6 +47,12 @@ try {
     $stmt = $pdoBarang->prepare($sql);
     $stmt->execute([$q, $searchTerm, $searchTerm]);
     $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    // Cast flag is_harga_unset ke integer supaya konsisten di JSON
+    foreach ($results as &$r) {
+        $r['is_harga_unset'] = (int)($r['is_harga_unset'] ?? 0);
+    }
+    unset($r);
 
     // Cek apakah pencarian ini hasil dari Exact Match Barcode
     $isBarcodeMatch = false;

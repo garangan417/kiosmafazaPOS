@@ -26,6 +26,66 @@ $pelangganId  = intval($data['pelanggan_id'] ?? 0);
 $catatan      = trim($data['catatan'] ?? '');
 $items        = $data['items'];
 
+// ============================================================
+// VALIDASI BACKEND: Tolak transaksi jika ada item barang
+// (non-jasa) dengan harga jual <= 0. Cek ulang ke DB,
+// jangan percaya nilai dari JS.
+// ============================================================
+foreach ($items as $idx => $item) {
+    $isJasa = !empty($item['is_jasa']) && (
+        $item['is_jasa'] === true ||
+        $item['is_jasa'] == 1 ||
+        $item['is_jasa'] === 'true'
+    );
+
+    if ($isJasa) continue; // Jasa/PPOB tidak divalidasi harga master
+
+    $kemasanId = intval($item['kemasan_id'] ?? 0);
+    $hargaJual = floatval($item['harga_jual'] ?? 0);
+
+    if ($kemasanId > 0) {
+        $stmtCek = $pdoBarang->prepare("
+            SELECT
+                b.nama_barang,
+                bk.nama_kemasan,
+                COALESCE(h.harga_jual_ecer, 0) AS harga_db
+            FROM barang_kemasan bk
+            JOIN barang b ON bk.barang_id = b.id
+            LEFT JOIN harga_barang h ON bk.id = h.barang_kemasan_id
+            WHERE bk.id = ?
+        ");
+        $stmtCek->execute([$kemasanId]);
+        $dataDb = $stmtCek->fetch(PDO::FETCH_ASSOC);
+
+        if (!$dataDb) {
+            echo json_encode([
+                'status' => false,
+                'message' => "Item #" . ($idx + 1) . " tidak valid (kemasan ID {$kemasanId} tidak ditemukan)."
+            ]);
+            exit;
+        }
+
+        if (floatval($dataDb['harga_db']) <= 0) {
+            echo json_encode([
+                'status' => false,
+                'message' => "Transaksi ditolak: '{$dataDb['nama_barang']} ({$dataDb['nama_kemasan']})' belum memiliki harga jual. Silakan set harga terlebih dahulu."
+            ]);
+            exit;
+        }
+
+        if ($hargaJual <= 0) {
+            echo json_encode([
+                'status' => false,
+                'message' => "Transaksi ditolak: harga jual '{$dataDb['nama_barang']}' tidak valid (Rp 0)."
+            ]);
+            exit;
+        }
+    }
+}
+// ============================================================
+// END VALIDASI
+// ============================================================
+
 $noFaktur = 'TRX-' . date('Ymd-His');
 $namaPelanggan = '';
 
