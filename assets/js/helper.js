@@ -478,19 +478,65 @@ function showSearchDropdown(data) {
     data.forEach((item, index) => {
         let teksSatuan = item.satuan ? item.satuan : item.nama_kemasan;
         let harga = Math.round(item.harga_ecer || item.harga_jual || 0);
+        let isUnset = parseInt(item.is_harga_unset) === 1 || harga <= 0;
+
+                // --- LOGIKA STOK V2 ---
+        let stokBase = parseInt(item.stok_base) || 0;
+        let isiKemasan = parseInt(item.isi) || 1;
+        
+        // Hitung stok dalam satuan kemasan
+        let stokPak = Math.floor(stokBase / isiKemasan);
+        let sisaEceran = stokBase % isiKemasan;
+        
+        let teksStok = "";
+        if (stokBase > 0) {
+            if (stokPak > 0) {
+                teksStok = `${stokPak} ${item.nama_kemasan}`;
+                if (sisaEceran > 0) teksStok += ` (${sisaEceran} ${item.satuan})`;
+            } else {
+                // Jika stoknya cuma eceran (kurang dari 1 Pak), tampilkan ecerannya
+                teksStok = `${stokBase} ${item.satuan}`;
+            }
+        } else {
+            teksStok = "0";
+        }
+
+        let badgeStokHtml = '';
+        if (window.STOK_AKTIF) {
+            let badgeColor = stokBase > 0 ? 'bg-success' : 'bg-danger';
+            badgeStokHtml = `<span class="badge item-stok ${badgeColor} ms-1">Stok: ${teksStok}</span>`;
+        }
+
+        // Baris unset: klik tidak menambah ke cart, tapi memunculkan peringatan
+        let klikAttr = isUnset
+            ? `onclick="peringatanHargaUnset(${index}); return false;"`
+            : `onclick="selectFromDropdown(${index}); return false;"`;
+
+        let hargaHtml = isUnset
+            ? `<div class="item-harga text-danger" style="font-size:0.8rem;">
+                 <i class="bi bi-exclamation-triangle-fill"></i> Belum Set
+               </div>`
+            : `<div class="item-harga">Rp ${harga.toLocaleString('id-ID')}</div>`;
+
+        let badgeHtml = isUnset
+            ? `<span class="badge bg-danger ms-1" style="font-size:0.65rem;">Harga Belum Di-set</span>`
+            : '';
 
         html += `
         <a href="#"
-        class="dropdown-item-custom"
-        onclick="selectFromDropdown(${index}); return false;">
+        class="dropdown-item-custom ${isUnset ? 'item-unset' : ''}"
+        ${klikAttr}
+        style="${isUnset ? 'opacity:0.85;' : ''}">
         <div class="flex-grow-1" style="min-width: 0;">
         <div class="item-nama">${escapeHtml(item.nama_barang)}</div>
         <div class="item-subinfo">
         ${escapeHtml(teksSatuan || '')}${item.isi ? ' • isi ' + escapeHtml(item.isi) : ''}
+        ${badgeHtml}
+        ${badgeStokHtml}
         </div>
         </div>
         <div class="text-end">
-        <div class="item-harga">Rp ${harga.toLocaleString('id-ID')}</div>
+        ${hargaHtml}
         </div>
         </a>
         `;
@@ -538,10 +584,69 @@ function selectFromDropdown(index) {
 
 
 // ==========================================
+// PERINGATAN HARGA BELUM DI-SET (KASIR)
+// ==========================================
+function peringatanHargaUnset(index) {
+    let item = currentSearchResults[index];
+    if (!item) return;
+
+    Swal.fire({
+        icon: 'warning',
+        title: 'Harga Belum Di-set!',
+        html: `
+            <div class="text-start">
+                <p class="mb-2">
+                    <strong>${escapeHtml(item.nama_barang)}</strong><br>
+                    <small class="text-muted">${escapeHtml(item.nama_kemasan || '')} ${item.isi ? '• isi ' + escapeHtml(item.isi) + ' ' + escapeHtml(item.satuan || '') : ''}</small>
+                </p>
+                <div class="alert alert-danger py-2 mb-0 small">
+                    <i class="bi bi-exclamation-triangle-fill me-1"></i>
+                    Harga jual eceran barang ini belum diatur di sistem.
+                    Barang <strong>tidak dapat dijual</strong> sebelum harga di-set.
+                </div>
+                <p class="small text-muted mt-2 mb-0">
+                    Hubungi admin atau buka menu <strong>Kelola Harga</strong> untuk mengatur harga.
+                </p>
+            </div>
+        `,
+        confirmButtonText: '<i class="bi bi-check-lg me-1"></i> OK, Mengerti',
+        confirmButtonColor: '#dc3545',
+        allowOutsideClick: true
+    }).then(() => {
+        resetFocusScan();
+    });
+}
+
+
+// ==========================================
 // KERANJANG BELANJA
 // ==========================================
 
 function addToCart(item) {
+    // ✅ VALIDASI: Block barang yang harganya belum di-set (kecuali jasa/PPOB)
+    let hargaCek = parseFloat(item.harga_ecer || item.harga_jual || 0);
+    let isJasaCek = item.is_jasa || false;
+
+    if (!isJasaCek && (parseInt(item.is_harga_unset) === 1 || hargaCek <= 0)) {
+        Swal.fire({
+            icon: 'warning',
+            title: 'Harga Belum Di-set!',
+            html: `
+                <div class="text-start">
+                    <p class="mb-2"><strong>${escapeHtml(item.nama_barang || '')}</strong></p>
+                    <div class="alert alert-danger py-2 mb-0 small">
+                        <i class="bi bi-exclamation-triangle-fill me-1"></i>
+                        Barang ini belum memiliki harga jual. Tidak dapat ditambahkan ke keranjang.
+                    </div>
+                </div>
+            `,
+            confirmButtonText: 'OK',
+            confirmButtonColor: '#dc3545'
+        }).then(() => resetFocusScan());
+        clearScan();
+        return; // STOP - jangan masukkan ke cart
+    }
+
     let isJasa = item.is_jasa || false;
 
     let existingIndex = cart.findIndex(c =>
@@ -595,7 +700,9 @@ function addToCart(item) {
             subtotal: item.subtotal || (initialQty * initialHarga),
                   is_jasa: isJasa,
                   kategori: item.kategori || (isJasa ? 'PPOB / Jasa' : 'Barang Toko'),
-                  keterangan: item.keterangan || item.nama_barang
+                  keterangan: item.keterangan || item.nama_barang,
+                  isi: item.isi || 1,
+                  stok_base: item.stok_base || 0
         });
     }
 
@@ -620,13 +727,23 @@ function renderCart() {
 
         document.getElementById('btnCheckout').disabled = true;
     } else {
-        cart.forEach((item, index) => {
+                cart.forEach((item, index) => {
             total += item.subtotal;
+
+            // --- LOGIKA TAMPILAN STOK ---
+            let badgeStok = '';
+            if (!item.is_jasa && window.STOK_AKTIF) {
+                let stokTampil = item.stok_base; // Karena keranjang selalu eceran
+                let warna = stokTampil > 0 ? 'bg-success-subtle text-success border-success' : 'bg-danger text-white';
+                let teks = stokTampil > 0 ? `Stok: ${stokTampil} ${item.satuan}` : `Stok Habis!`;
+                badgeStok = `<span class="badge border ${warna} ms-1" style="font-size: 0.65rem;">${teks}</span>`;
+            }
 
             tbody.innerHTML += `
             <tr>
             <td>
             <strong class="d-block text-dark">${escapeHtml(item.nama_barang)}</strong>
+            <div class="mt-1">${badgeStok}</div>
             </td>
             <td class="font-monospace">
             Rp ${Math.round(item.harga_jual).toLocaleString('id-ID')}
@@ -937,6 +1054,45 @@ function prosesCheckout() {
     if (cart.length === 0) {
         alert('Keranjang belanja masih kosong!');
         return;
+    }
+
+    // ✅ VALIDASI: Cek ulang seluruh cart, tolak jika ada item harga 0
+    let itemBermasalah = cart.filter(it =>
+        !it.is_jasa && (parseFloat(it.harga_jual) <= 0)
+    );
+    if (itemBermasalah.length > 0) {
+        let namaList = itemBermasalah.map(it =>
+            `<li><strong>${escapeHtml(it.nama_barang)}</strong></li>`
+        ).join('');
+        Swal.fire({
+            icon: 'error',
+            title: 'Transaksi Ditolak!',
+            html: `
+                <p class="mb-2">Ada item dengan harga belum di-set:</p>
+                <ul class="text-start small">${namaList}</ul>
+                <p class="small text-muted mb-0">Hapus item tersebut atau set harganya dulu di menu Kelola Harga.</p>
+            `,
+            confirmButtonColor: '#dc3545'
+        });
+        return;
+    }
+        // VALIDASI STOK HABIS
+    if (window.STOK_AKTIF) {
+        let itemHabis = cart.filter(it => !it.is_jasa && it.stok_base <= 0);
+        if (itemHabis.length > 0) {
+            let namaList = itemHabis.map(it => `<li><strong>${escapeHtml(it.nama_barang)}</strong> (Stok Habis)</li>`).join('');
+            Swal.fire({
+                icon: 'error',
+                title: 'Stok Tidak Mencukupi!',
+                html: `
+                    <p class="mb-2">Barang berikut stoknya sudah habis:</p>
+                    <ul class="text-start small">${namaList}</ul>
+                    <p class="small text-muted mb-0">Silakan hapus barang tersebut atau tambah stok terlebih dahulu.</p>
+                `,
+                confirmButtonColor: '#dc3545'
+            });
+            return;
+        }
     }
 
     let total = cart.reduce((sum, item) => sum + item.subtotal, 0);

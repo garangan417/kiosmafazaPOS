@@ -4,6 +4,9 @@ require_once __DIR__ . '/../config.php';
 require_once BASE_PATH . 'database/db_barang.php';
 require_once BASE_PATH . 'database/db_pelanggan.php';
 require_once BASE_PATH . 'database/db.php'; // Dompet Keuangan (kios.sqlite)
+require_once BASE_PATH . 'database/helper_stok.php';
+require_once BASE_PATH . 'database/query_pos.php'; 
+require_once BASE_PATH . 'database/query_stok_v2.php';
 
 header('Content-Type: application/json');
 
@@ -26,16 +29,62 @@ $pelangganId  = intval($data['pelanggan_id'] ?? 0);
 $catatan      = trim($data['catatan'] ?? '');
 $items        = $data['items'];
 
+// ============================================================
+// VALIDASI BACKEND: Tolak transaksi jika ada item barang
+// (non-jasa) dengan harga jual <= 0. Cek ulang ke DB.
+// ============================================================
+foreach ($items as $idx => $item) {
+    $isJasa = !empty($item['is_jasa']) && (
+        $item['is_jasa'] === true ||
+        $item['is_jasa'] == 1 ||
+        $item['is_jasa'] === 'true'
+    );
+
+    if ($isJasa) continue;
+
+    $kemasanId = intval($item['kemasan_id'] ?? 0);
+    $hargaJual = floatval($item['harga_jual'] ?? 0);
+
+    if ($kemasanId > 0) {
+        $stmtCek = $pdoBarang->prepare("
+            SELECT
+                b.nama_barang,
+                bk.nama_kemasan,
+                COALESCE(h.harga_jual_ecer, 0) AS harga_db
+            FROM barang_kemasan bk
+            JOIN barang b ON bk.barang_id = b.id
+            LEFT JOIN harga_barang h ON bk.id = h.barang_kemasan_id
+            WHERE bk.id = ?
+        ");
+        $stmtCek->execute([$kemasanId]);
+        $dataDb = $stmtCek->fetch(PDO::FETCH_ASSOC);
+
+        if (!$dataDb) {
+            echo json_encode(['status' => false, 'message' => "Item #" . ($idx + 1) . " tidak valid (kemasan ID {$kemasanId} tidak ditemukan)."]);
+            exit;
+        }
+
+        if (floatval($dataDb['harga_db']) <= 0) {
+            echo json_encode(['status' => false, 'message' => "Transaksi ditolak: '{$dataDb['nama_barang']} ({$dataDb['nama_kemasan']})' belum memiliki harga jual."]);
+            exit;
+        }
+
+        if ($hargaJual <= 0) {
+            echo json_encode(['status' => false, 'message' => "Transaksi ditolak: harga jual '{$dataDb['nama_barang']}' tidak valid (Rp 0)."]);
+            exit;
+        }
+    }
+}
+// ============================================================
+// END VALIDASI
+// ============================================================
+
 $noFaktur = 'TRX-' . date('Ymd-His');
 $namaPelanggan = '';
 
 try {
-    // -------------------------------------------------------------
-    // OPREK 1: TRANSAKSI ADAPTIF (KOMPATIBEL SQLITE & MARIADB)
-    // -------------------------------------------------------------
     $pdoBarang->beginTransaction();
     
-    // Hanya buka transaksi kedua JIKA $pdo dan $pdoBarang adalah 2 objek berbeda (SQLite)
     if (isset($pdo) && $pdo !== $pdoBarang && !$pdo->inTransaction()) {
         $pdo->beginTransaction();
     }
@@ -82,16 +131,8 @@ try {
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ");
         $stmtPenjualan->execute([
-            $noFaktur, 
-            $pelangganId > 0 ? $pelangganId : NULL, 
-            $totalBarangFisik, 
-            $diskon, 
-            $totalBersihBarang, 
-            $bayar, 
-            $kembalian, 
-            $metodeBayar, 
-            $catatan, 
-            $createdAt
+            $noFaktur, $pelangganId > 0 ? $pelangganId : NULL, 
+            $totalBarangFisik, $diskon, $totalBersihBarang, $bayar, $kembalian, $metodeBayar, $catatan, $createdAt
         ]);
         $penjualanId = $pdoBarang->lastInsertId();
 
@@ -112,34 +153,45 @@ try {
             $jenisHarga  = $itemFisik['jenis_harga'] ?? 'ECER';
 
             $stmtDetail->execute([
-                $penjualanId,
-                $kemasanId > 0 ? $kemasanId : NULL,
-                $namaBarang,
-                $namaKemasan,
-                $qty,
-                $satuan,
-                $hargaBeli,
-                $hargaJual,
-                $jenisHarga,
-                $subtotal
+                $penjualanId, $kemasanId > 0 ? $kemasanId : NULL, $namaBarang, $namaKemasan,
+                $qty, $satuan, $hargaBeli, $hargaJual, $jenisHarga, $subtotal
             ]);
         }
     }
 
-    // B. POTONG STOK FISIK
-    $stmtUpdateStok = $pdoBarang->prepare("UPDATE barang_kemasan SET stok = stok - ? WHERE id = ?");
-    foreach ($items as $item) {
-        $isJasa = !empty($item['is_jasa']) && (
-            $item['is_jasa'] === true || 
-            $item['is_jasa'] == 1 || 
-            $item['is_jasa'] === 'true'
-        );
-        $isStokAktif = !isset($item['stok_aktif']) || $item['stok_aktif'] == true;
-        $kemasanId   = intval($item['kemasan_id'] ?? 0);
-        $qty         = floatval($item['qty'] ?? 1);
+    // ============================================================
+    // B. POTONG STOK FISIK (MENGGUNAKAN API STOK V2)
+    // ============================================================
+    
+    // Cek apakah fitur pelacakan stok sedang aktif
+    $cfgStok = getPengaturanStok($pdoBarang);
 
-        if (!$isJasa && $kemasanId > 0 && $isStokAktif) {
-            $stmtUpdateStok->execute([$qty, $kemasanId]);
+    if ($cfgStok['fitur_stok']) {
+        foreach ($items as $item) {
+            $isJasa = !empty($item['is_jasa']) && (
+                $item['is_jasa'] === true || 
+                $item['is_jasa'] == 1 || 
+                $item['is_jasa'] === 'true'
+            );
+            $kemasanId = intval($item['kemasan_id'] ?? 0);
+            $qty       = intval($item['qty'] ?? 1);
+
+            if (!$isJasa && $kemasanId > 0 && $qty > 0) {
+                $resMutasi = catatMutasi(
+                    $pdoBarang, 
+                    $kemasanId, 
+                    'KELUAR_PENJUALAN', 
+                    $qty, 
+                    'PENJUALAN', 
+                    $penjualanId ?? null, 
+                    "Penjualan Kasir [{$noFaktur}]",
+                    true // <-- IsSatuanBase (karena keranjang mengirim eceran)
+                );
+
+                if (!$resMutasi['ok']) {
+                    throw new Exception("Gagal potong stok: " . $resMutasi['error']);
+                }
+            }
         }
     }
 
@@ -158,12 +210,7 @@ try {
             INSERT INTO transaksi (tanggal, tipe, kategori, nominal, saldo_akhir, keterangan)
             VALUES (?, 'masuk', 'PPOB & Jasa', ?, ?, ?)
         ");
-        $stmtKeuangan->execute([
-            $tglKas, 
-            $totalNominalPpob, 
-            $saldoAkhirBaru, 
-            $ketKas
-        ]);
+        $stmtKeuangan->execute([$tglKas, $totalNominalPpob, $saldoAkhirBaru, $ketKas]);
     }
 
     // D. RECORD UTANG DI DB PELANGGAN
@@ -196,19 +243,11 @@ try {
                 INSERT INTO utang (pelanggan_id, tipe, nominal, keterangan, items_json, created_at)
                 VALUES (?, 'utang', ?, ?, ?, ?)
             ");
-            $stmtUtang->execute([
-                $pelangganId,
-                $nominalUtang,
-                $ketUtang,
-                $itemsJson,
-                $createdAt
-            ]);
+            $stmtUtang->execute([$pelangganId, $nominalUtang, $ketUtang, $itemsJson, $createdAt]);
         }
     }
 
-    // -------------------------------------------------------------
-    // OPREK 2: COMMIT ADAPTIF
-    // -------------------------------------------------------------
+    // COMMIT ADAPTIF
     if ($pdoBarang->inTransaction()) {
         $pdoBarang->commit();
     }
@@ -223,10 +262,8 @@ try {
         'nama_pelanggan' => $namaPelanggan
     ]);
 
-} catch (PDOException $e) {
-    // -------------------------------------------------------------
-    // OPREK 3: ROLLBACK ADAPTIF
-    // -------------------------------------------------------------
+} catch (Exception $e) {
+    // ROLLBACK ADAPTIF
     if (isset($pdoBarang) && $pdoBarang->inTransaction()) {
         $pdoBarang->rollBack();
     }

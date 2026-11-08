@@ -6,45 +6,19 @@ error_reporting(E_ALL);
 
 require_once __DIR__ . '/../config.php';
 require_once BASE_PATH . 'database/db_barang.php';
+require_once BASE_PATH . 'database/query_stok_v2.php'; // Panggil mesin V2
 
-// ==========================================
-// 1. DEKLARASI FUNGSI HELPER
-// ==========================================
-
-// Helper: Send HTMX Toast Header
 function sendHtmxToast($icon, $title) {
     header('HX-Trigger: ' . json_encode([
         'showToast' => ['icon' => $icon, 'title' => $title]
     ]));
 }
 
-// Helper: Render Isi Tabel Stok dengan Filter Pencarian Nama & Barcode
-function renderTabelStok($pdo, $searchQuery = '') {
-    $searchQuery = trim($searchQuery);
-    
-    $sql = "SELECT DISTINCT
-                bk.id AS kemasan_id,
-                b.nama_barang,
-                bk.nama_kemasan,
-                bk.satuan,
-                COALESCE(bk.isi, 1) AS isi,
-                COALESCE(bk.stok, 0) AS stok
-            FROM barang_kemasan bk
-            JOIN barang b ON bk.barang_id = b.id
-            LEFT JOIN barang_barcode bb ON bk.id = bb.barang_kemasan_id";
-    
-    $params = [];
-    if ($searchQuery !== '') {
-        $sql .= " WHERE b.nama_barang LIKE ? OR bk.nama_kemasan LIKE ? OR bb.barcode LIKE ?";
-        $searchTerm = '%' . $searchQuery . '%';
-        $params = [$searchTerm, $searchTerm, $searchTerm];
-    }
-    
-    $sql .= " ORDER BY b.nama_barang ASC";
-    
-    $stmt = $pdo->prepare($sql);
-    $stmt->execute($params);
-    $list = $stmt->fetchAll(PDO::FETCH_ASSOC);
+function renderTabelStok($pdo, $searchQuery = '', $page = 1) {
+    $result = getDaftarStokV2($pdo, trim($searchQuery), $page);
+    $list = $result['items'];
+    $totalPages = $result['total_pages'];
+    $currentPage = $result['current_page'];
 
     if (empty($list)) {
         echo '<tr><td colspan="4" class="text-center text-muted py-4"><i class="bi bi-inbox d-block fs-3 mb-1"></i>Data barang tidak ditemukan.</td></tr>';
@@ -52,84 +26,81 @@ function renderTabelStok($pdo, $searchQuery = '') {
     }
 
     foreach ($list as $b) {
+        $stokBase = (int) $b['stok_base'];
+        $isi = max(1, (int) $b['isi']);
+        $stokKemasan = floor($stokBase / $isi);
+        
+        if ($stokBase <= 0) { $badgeColor = 'bg-danger'; $badgeText = 'Habis'; }
+        elseif ($stokBase <= 5) { $badgeColor = 'bg-warning text-dark'; $badgeText = 'Menipis'; }
+        else { $badgeColor = 'bg-success'; $badgeText = 'Aman'; }
         ?>
         <tr>
-            <td><strong class="text-dark"><?= htmlspecialchars($b['nama_barang']) ?></strong></td>
+            <td>
+                <strong class="text-dark d-block"><?= htmlspecialchars($b['nama_barang']) ?></strong>
+                <span class="badge <?= $badgeColor ?> mt-1" style="font-size: 0.65rem;"><?= $badgeText ?></span>
+            </td>
             <td>
                 <span class="badge bg-info-subtle text-info border border-info me-1">
                     <?= htmlspecialchars($b['nama_kemasan']) ?>
                 </span>
-                <small class="text-muted">(1 <?= htmlspecialchars($b['nama_kemasan']) ?> = <?= $b['isi'] ?> <?= htmlspecialchars($b['satuan']) ?>)</small>
+                <small class="text-muted d-block mt-1">(1 <?= htmlspecialchars($b['nama_kemasan']) ?> = <?= $isi ?> <?= htmlspecialchars($b['satuan']) ?>)</small>
             </td>
-            <td class="text-center font-monospace fw-bold fs-6">
-                <?= number_format($b['stok'], 0, ',', '.') ?> <small class="fw-normal text-muted"><?= htmlspecialchars($b['satuan']) ?></small>
+            <td class="text-center">
+                <span class="fs-5 fw-bold font-monospace"><?= number_format($stokBase, 0, ',', '.') ?></span> 
+                <small class="text-muted"><?= htmlspecialchars($b['satuan']) ?></small>
+                <?php if ($isi > 1): ?>
+                    <div class="extra-small text-muted">(Setara <?= $stokKemasan ?> <?= htmlspecialchars($b['nama_kemasan']) ?>)</div>
+                <?php endif; ?>
             </td>
             <td class="text-end">
                 <button type="button" 
                         class="btn btn-sm btn-outline-secondary"
-                        onclick="setOpname(<?= $b['kemasan_id'] ?>, '<?= addslashes(htmlspecialchars($b['nama_barang'])) ?>', <?= $b['stok'] ?>, '<?= htmlspecialchars($b['satuan']) ?>')">
+                        onclick="setOpname(<?= $b['kemasan_id'] ?>, '<?= addslashes(htmlspecialchars($b['nama_barang'])) ?>', <?= $stokBase ?>, '<?= htmlspecialchars($b['satuan']) ?>')">
                     <i class="bi bi-pencil-square me-1"></i> Opname
                 </button>
             </td>
         </tr>
         <?php
     }
-}
 
-// ==========================================
-// 2. LOGIKA ROUTING EKSEKUSI
-// ==========================================
+    // Render Tombol Paginasi
+    if ($totalPages > 1) {
+        echo '<tr><td colspan="4" class="p-3 border-top bg-light">';
+        echo '<div class="d-flex justify-content-between align-items-center">';
+        echo '<small class="text-muted">Halaman ' . $currentPage . ' dari ' . $totalPages . '</small>';
+        echo '<nav><ul class="pagination pagination-sm mb-0">';
+        
+        // Tombol Prev
+        $prevDisabled = ($currentPage <= 1) ? 'disabled' : '';
+        echo '<li class="page-item ' . $prevDisabled . '"><button class="page-link" hx-get="api_stok.php?action=load_tabel&q=' . urlencode($searchQuery) . '&page=' . ($currentPage - 1) . '" hx-target="#tblStokBody">Prev</button></li>';
+        
+        // Angka Halaman (Batasi maksimal 5 tombol)
+        $start = max(1, $currentPage - 2);
+        $end = min($totalPages, $currentPage + 2);
+        
+        for ($i = $start; $i <= $end; $i++) {
+            $active = ($i == $currentPage) ? 'active' : '';
+            echo '<li class="page-item ' . $active . '"><button class="page-link" hx-get="api_stok.php?action=load_tabel&q=' . urlencode($searchQuery) . '&page=' . $i . '" hx-target="#tblStokBody">' . $i . '</button></li>';
+        }
+        
+        // Tombol Next
+        $nextDisabled = ($currentPage >= $totalPages) ? 'disabled' : '';
+        echo '<li class="page-item ' . $nextDisabled . '"><button class="page-link" hx-get="api_stok.php?action=load_tabel&q=' . urlencode($searchQuery) . '&page=' . ($currentPage + 1) . '" hx-target="#tblStokBody">Next</button></li>';
+        
+        echo '</ul></nav></div></td></tr>';
+    }
+}
 
 $action      = $_GET['action'] ?? '';
 $searchQuery = $_GET['q'] ?? $_POST['q'] ?? '';
+$page        = max(1, intval($_GET['page'] ?? 1)); // TAMBAHKAN INI
 
 if ($action === 'load_tabel') {
     renderTabelStok($pdoBarang, $searchQuery);
     exit;
 }
 
-if ($action === 'tambah_stok') {
-    $kemasanId  = intval($_POST['kemasan_id'] ?? 0);
-    $qty        = intval($_POST['qty'] ?? 0);
-    $opsiSatuan = $_POST['opsi_satuan'] ?? 'ECER';
-    $keterangan = trim($_POST['keterangan'] ?? 'Stok Masuk');
 
-    if ($kemasanId <= 0 || $qty <= 0) {
-        sendHtmxToast('error', 'Pilih barang dan jumlah stok dengan benar!');
-        renderTabelStok($pdoBarang, $searchQuery);
-        exit;
-    }
-
-    try {
-        $stmt = $pdoBarang->prepare("SELECT isi, stok FROM barang_kemasan WHERE id = ?");
-        $stmt->execute([$kemasanId]);
-        $row = $stmt->fetch(PDO::FETCH_ASSOC);
-
-        if (!$row) {
-            sendHtmxToast('error', 'Data barang tidak ditemukan!');
-            renderTabelStok($pdoBarang, $searchQuery);
-            exit;
-        }
-
-        $isi = max(1, intval($row['isi']));
-        $tambahanStokPcs = ($opsiSatuan === 'GROSIR') ? ($qty * $isi) : $qty;
-
-        $pdoBarang->beginTransaction();
-        $updateStmt = $pdoBarang->prepare("UPDATE barang_kemasan SET stok = stok + ? WHERE id = ?");
-        $updateStmt->execute([$tambahanStokPcs, $kemasanId]);
-        $pdoBarang->commit();
-
-        sendHtmxToast('success', 'Stok berhasil ditambahkan!');
-    } catch (Exception $e) {
-        if ($pdoBarang->inTransaction()) {
-            $pdoBarang->rollBack();
-        }
-        sendHtmxToast('error', 'Error Database: ' . $e->getMessage());
-    }
-
-    renderTabelStok($pdoBarang, $searchQuery);
-    exit;
-}
 
 if ($action === 'opname') {
     $kemasanId = intval($_POST['kemasan_id'] ?? 0);
@@ -137,10 +108,22 @@ if ($action === 'opname') {
 
     if ($kemasanId > 0 && $stokFisik >= 0) {
         try {
-            $stmt = $pdoBarang->prepare("UPDATE barang_kemasan SET stok = ? WHERE id = ?");
-            $stmt->execute([$stokFisik, $kemasanId]);
+            // Panggil catatMutasi dengan jenis OPNAME_SET
+            $res = catatMutasi(
+                $pdoBarang, 
+                $kemasanId, 
+                'OPNAME_SET', 
+                $stokFisik, 
+                null, 
+                null, 
+                "Stock Opname Manual"
+            );
 
-            sendHtmxToast('success', 'Stock opname berhasil diperbarui!');
+            if ($res['ok']) {
+                sendHtmxToast('success', 'Stock opname berhasil diperbarui!');
+            } else {
+                sendHtmxToast('error', $res['error']);
+            }
         } catch (Exception $e) {
             sendHtmxToast('error', 'Gagal Opname: ' . $e->getMessage());
         }

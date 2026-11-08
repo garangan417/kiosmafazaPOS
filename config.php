@@ -1,17 +1,44 @@
 <?php
+// config.php
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
-// 1. BASE PATH (Folder Fisik Server)
+// ===================================================
+// 1. FUNGSI PEMBACA FILE .ENV
+// ===================================================
+if (!function_exists('loadEnv')) {
+    function loadEnv($path) {
+        if (!file_exists($path)) return;
+        $lines = file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+        foreach ($lines as $line) {
+            $line = trim($line);
+            if ($line === '' || strpos($line, '#') === 0) continue;
+            if (strpos($line, '=') === false) continue;
+            
+            list($name, $value) = explode('=', $line, 2);
+            $name = trim($name);
+            $value = trim($value, " \t\n\r\0\x0B\"'");
+            $_ENV[$name] = $value;
+        }
+    }
+}
+
+// Muat file .env dari folder yang sama dengan config.php
+loadEnv(__DIR__ . '/.env');
+
+// ===================================================
+// 2. BASE PATH
+// ===================================================
 define('BASE_PATH', __DIR__ . '/');
 
-// 2. DETEKSI PROTOKOL & HOST
-$protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https://' : 'http://';
-$host     = $_SERVER['HTTP_HOST'];
-
+// ===================================================
 // 3. DETEKSI BASE URL OTOMATIS
-$docRoot   = str_replace('\\', '/', realpath($_SERVER['DOCUMENT_ROOT']));
+// ===================================================
+$protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https://' : 'http://';
+$host     = $_SERVER['HTTP_HOST'] ?? 'localhost';
+
+$docRoot   = str_replace('\\', '/', realpath($_SERVER['DOCUMENT_ROOT'] ?? ''));
 $basePath  = str_replace('\\', '/', realpath(__DIR__));
 $relativeDir = trim(str_replace($docRoot, '', $basePath), '/');
 
@@ -20,20 +47,18 @@ if ($relativeDir === '') {
 } else {
     $baseUrl = $protocol . $host . '/' . $relativeDir . '/';
 }
-
 define('BASE_URL', $baseUrl);
 
 // ===================================================
-// 4. KONFIGURASI DATABASE MARIADB / MYSQL
+// 4. KONFIGURASI DATABASE (BACA DARI .ENV)
 // ===================================================
-// 1. Pengaturan Database MariaDB
-define('DB_HOST', '127.0.0.1');     // atau 'localhost'
-define('DB_PORT', '3306');          // Port default MariaDB/MySQL
-define('DB_NAME', 'mafaza');   // Sesuaikan dengan nama database kamu
-define('DB_USER', 'mafaza');          // User database
-define('DB_PASS', '1234');              // Password database kamu
+define('DB_HOST', $_ENV['DB_HOST'] ?? '127.0.0.1');
+define('DB_PORT', $_ENV['DB_PORT'] ?? '3306');
+define('DB_NAME', $_ENV['DB_NAME'] ?? 'kios');
+define('DB_USER', $_ENV['DB_USER'] ?? 'root');
+define('DB_PASS', $_ENV['DB_PASS'] ?? '');
 
-// 2. Inisialisasi Koneksi PDO
+// Inisialisasi Koneksi PDO
 try {
     $dsn = "mysql:host=" . DB_HOST . ";port=" . DB_PORT . ";dbname=" . DB_NAME . ";charset=utf8mb4";
     
@@ -43,20 +68,21 @@ try {
         PDO::ATTR_EMULATE_PREPARES   => false,
     ];
 
-    // Variabel $pdo dibuat di scope global
     $pdo = new PDO($dsn, DB_USER, DB_PASS, $options);
 
 } catch (PDOException $e) {
-    // Tampilkan pesan error jika koneksi gagal
     die("Koneksi Database MariaDB Gagal: " . $e->getMessage());
 }
-/**
- * Helper Fungsi Pemisah Ribuan / Format Rupiah
- */
-function formatRupiah($angka, $denganRp = true) {
-    $prefix = $denganRp ? 'Rp ' : '';
-    return $prefix . number_format((float)$angka, 0, ',', '.');
+
+// ===================================================
+// 5. HELPER FUNGSI
+// ===================================================
+if (!function_exists('formatRupiah')) {
+    function formatRupiah($angka, $denganRp = true) {
+        $prefix = $denganRp ? 'Rp ' : '';
+        return $prefix . number_format((float)$angka, 0, ',', '.');
+    }
 }
 
-// Set zona waktu PHP agar pas dengan waktu lokal Indonesia
+// Set zona waktu PHP agar pas dengan waktu lokal
 date_default_timezone_set('Asia/Makassar');

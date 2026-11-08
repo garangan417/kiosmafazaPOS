@@ -6,6 +6,7 @@ if (session_status() === PHP_SESSION_NONE) {
 require_once __DIR__ . '/../config.php';
 require_once BASE_PATH . 'database/db_barang.php';
 require_once BASE_PATH . 'database/query_barang.php';
+require_once BASE_PATH . 'database/query_stok_v2.php'; 
 
 // TANGKAP PARAMETER URL (SEARCH, KATEGORI & BARCODE REDIRECT)
 $barcodeFromUrl = isset($_GET['barcode']) ? trim($_GET['barcode']) : '';
@@ -77,13 +78,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     // 3. EDIT KEMASAN BARANG
-    elseif ($action === 'edit_kemasan') {
+       elseif ($action === 'edit_kemasan') {
         $kemasan_id   = intval($_POST['kemasan_id'] ?? 0);
         $nama_kemasan = mb_strtoupper(trim($_POST['nama_kemasan'] ?? ''));
         $satuan       = mb_strtoupper(trim($_POST['satuan'] ?? 'PCS'));
         $isi          = max(1, intval($_POST['isi'] ?? 1));
 
-        if ($kemasan_id > 0 && !empty($nama_kemasan) && !empty($satuan)) {
+        // Ambil barang_id dari kemasan
+        $stmtBid = $pdoBarang->prepare("SELECT barang_id FROM barang_kemasan WHERE id = ?");
+        $stmtBid->execute([$kemasan_id]);
+        $barang_id = (int) $stmtBid->fetchColumn();
+
+        $satuanBase = $barang_id > 0 ? getSatuanBaseBarang($pdoBarang, $barang_id) : null;
+        if ($satuanBase !== null && strtoupper($satuan) !== strtoupper($satuanBase)) {
+            $_SESSION['toast_error'] = "Satuan '{$satuan}' berbeda dengan satuan barang ini ('{$satuanBase}').";
+        } elseif ($kemasan_id > 0 && !empty($nama_kemasan) && !empty($satuan)) {
             try {
                 $stmt = $pdoBarang->prepare("UPDATE barang_kemasan SET nama_kemasan = ?, satuan = ?, isi = ? WHERE id = ?");
                 $stmt->execute([$nama_kemasan, $satuan, $isi, $kemasan_id]);
@@ -97,14 +106,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     // 4. TAMBAH VARIAN KEMASAN BARU
-    elseif ($action === 'add_kemasan') {
+      elseif ($action === 'add_kemasan') {
         $barang_id    = intval($_POST['barang_id'] ?? 0);
         $nama_kemasan = mb_strtoupper(trim($_POST['nama_kemasan'] ?? ''));
         $satuan       = mb_strtoupper(trim($_POST['satuan'] ?? 'PCS'));
         $isi          = max(1, intval($_POST['isi'] ?? 1));
         $barcode      = trim($_POST['barcode'] ?? '');
 
-        if (!empty($barcode) && isBarcodeExists($pdoBarang, $barcode)) {
+        // ← VALIDASI: satuan harus sama dengan base unit barang
+        $satuanBase = getSatuanBaseBarang($pdoBarang, $barang_id);
+        if ($satuanBase !== null && strtoupper($satuan) !== strtoupper($satuanBase)) {
+            $_SESSION['toast_error'] = "Satuan '{$satuan}' berbeda dengan satuan barang ini ('{$satuanBase}'). Jika ingin varian dengan satuan berbeda, buat barang baru.";
+        } elseif (!empty($barcode) && isBarcodeExists($pdoBarang, $barcode)) {
             $_SESSION['toast_error'] = "Gagal: Barcode '{$barcode}' sudah terdaftar pada produk/kemasan lain!";
         } elseif ($barang_id > 0 && !empty($nama_kemasan)) {
             try {
@@ -127,7 +140,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
     }
-
     // 5. TAMBAH BARCODE BARU KE KEMASAN ADA
     elseif ($action === 'add_barcode') {
         $kemasan_id = intval($_POST['kemasan_id'] ?? 0);

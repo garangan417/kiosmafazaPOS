@@ -24,6 +24,7 @@ $current_page = $_SERVER['REQUEST_URI'];
   <!-- CSS Assets (Lokal) -->
   <link rel="stylesheet" href="/assets/css/bootstrap.min.css">
   <link rel="stylesheet" href="/assets/css/style.css">
+  <link rel="stylesheet" href="/assets/css/bootstrap-icons.css">
 
 <style>
 /* CSS Tampilan Khusus Struk 58mm */

@@ -7,32 +7,20 @@ require_once __DIR__ . '/../config.php';
 require_once BASE_PATH . 'database/db_barang.php';
 require_once BASE_PATH . 'database/query_pos.php';
 
-// Endpoint khusus HTMX saat form dikirim via POST
+$pesan = '';
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $fiturStok = isset($_POST['fitur_stok']) && $_POST['fitur_stok'] === '1';
-    $stokMinus = isset($_POST['izinkan_stok_minus']) && $_POST['izinkan_stok_minus'] === '1';
-
-    $resStok  = setFiturStok($pdoBarang, $fiturStok);
-    $resMinus = setIzinkanStokMinus($pdoBarang, $stokMinus);
-
-    if ($resStok && $resMinus) {
-        echo '<div class="alert alert-success alert-dismissible fade show" role="alert">
-                <i class="bi bi-check-circle-fill me-2"></i>Pengaturan stok berhasil diperbarui!
-                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-              </div>';
+    $fiturStok = isset($_POST['fitur_stok']);
+    
+    if (setFiturStok($pdoBarang, $fiturStok)) {
+        $pesan = '<div class="alert alert-success shadow-sm"><i class="bi bi-check-circle-fill me-2"></i>Pengaturan stok berhasil diperbarui!</div>';
     } else {
-        echo '<div class="alert alert-danger alert-dismissible fade show" role="alert">
-                <i class="bi bi-exclamation-triangle-fill me-2"></i>Gagal memperbarui pengaturan stok.
-                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-              </div>';
+        $pesan = '<div class="alert alert-danger shadow-sm"><i class="bi bi-exclamation-triangle-fill me-2"></i>Gagal memperbarui pengaturan.</div>';
     }
-    exit;
 }
 
-// Ambil Status Pengaturan Terbaru
 $cfgStok = getPengaturanStok($pdoBarang);
 
-// Memuat Partial Header Utama
 require_once BASE_PATH . 'partials/header.php';
 ?>
 
@@ -44,41 +32,29 @@ require_once BASE_PATH . 'partials/header.php';
         <h3 class="mb-0 fw-bold"><i class="bi bi-gear me-2"></i>Pengaturan Stok</h3>
     </div>
 
-    <!-- Container Alert Respon dari HTMX -->
-    <div id="settingAlert"></div>
+    <?= $pesan; ?>
 
     <div class="card shadow-sm border-0">
         <div class="card-body p-4">
-            <form id="formPengaturanStok"
-                  hx-post="pengaturan_stok.php"
-                  hx-target="#settingAlert"
-                  hx-swap="innerHTML">
-
-                <!-- Toggle Fitur Stok Utama -->
-                <div class="d-flex justify-content-between align-items-center mb-3">
-                    <div>
-                        <h6 class="mb-1 fw-bold">Aktifkan Fitur Pelacakan Stok</h6>
-                        <small class="text-muted d-block">
-                            Jika dinonaktifkan, transaksi kasir tidak akan mengecek sisa stok maupun mencatat log mutasi.
-                        </small>
-                    </div>
-                    <div class="form-check form-switch fs-4">
-                        <input class="form-check-input" type="checkbox" role="switch" id="fitur_stok" name="fitur_stok" value="1" <?= $cfgStok['fitur_stok'] ? 'checked' : ''; ?>>
+            <form method="POST">
+                <div class="p-3 bg-light rounded border mb-4">
+                    <div class="form-check form-switch d-flex justify-content-between align-items-center ps-0">
+                        <div>
+                            <label class="form-check-label fw-bold d-block" for="fitur_stok">Fitur Pelacakan Stok Otomatis</label>
+                            <small class="text-muted d-block">
+                                Jika <strong>Aktif</strong>, stok barang akan berkurang otomatis saat terjadi penjualan di kasir (menggunakan Stok V2).<br>
+                                Jika <strong>Nonaktif</strong>, transaksi kasir tetap lancar tanpa memotong stok.
+                            </small>
+                        </div>
+                        <input class="form-check-input ms-3" type="checkbox" role="switch" id="fitur_stok" name="fitur_stok" <?= $cfgStok['fitur_stok'] ? 'checked' : ''; ?> style="width: 3em; height: 1.5em; cursor: pointer;">
                     </div>
                 </div>
 
-                <hr class="my-4">
-
-                <!-- Toggle Opsi Stok Minus -->
-                <div class="d-flex justify-content-between align-items-center mb-3">
-                    <div>
-                        <h6 class="mb-1 fw-bold">Izinkan Penjualan Stok Minus</h6>
-                        <small class="text-muted d-block">
-                            Jika diaktifkan, transaksi tetap dapat diproses meskipun stok barang di database bernilai 0/habis.
-                        </small>
-                    </div>
-                    <div class="form-check form-switch fs-4">
-                        <input class="form-check-input" type="checkbox" role="switch" id="izinkan_stok_minus" name="izinkan_stok_minus" value="1" <?= $cfgStok['izinkan_stok_minus'] ? 'checked' : ''; ?>>
+                <!-- Info Tambahan -->
+                <div class="alert alert-info border-info d-flex gap-2">
+                    <i class="bi bi-info-circle-fill fs-5"></i>
+                    <div class="small">
+                        <strong>Catatan Sistem V2:</strong> Opsi "Izinkan Stok Minus" sudah dihapus. Sistem sekarang secara otomatis menolak transaksi jika stok tidak mencukupi, untuk menjaga akurasi data.
                     </div>
                 </div>
 
@@ -87,7 +63,6 @@ require_once BASE_PATH . 'partials/header.php';
                         <i class="bi bi-save me-1"></i> Simpan Perubahan
                     </button>
                 </div>
-
             </form>
         </div>
     </div>

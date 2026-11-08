@@ -1,5 +1,6 @@
 # Hanya ignore file database SQLite saja
 database/*.sqlite
+.env
 *.sqlite
 *.db
 

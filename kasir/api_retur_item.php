@@ -3,6 +3,7 @@
 header('Content-Type: application/json');
 require_once __DIR__ . '/../config.php';
 require_once BASE_PATH . 'database/db_barang.php';
+require_once BASE_PATH . 'database/query_stok_v2.php'; // Panggil fungsi Stok V2
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     echo json_encode(['status' => 'error', 'message' => 'Method tidak diizinkan!']);
@@ -72,23 +73,24 @@ try {
         $subtotal
     ]);
 
-    // 5. Kembalikan Stok Barang & Catat Mutasi
+    // 5. Kembalikan Stok Barang & Catat Mutasi (API V2)
     if (!empty($item['barang_kemasan_id'])) {
-        $kemasanId = $item['barang_kemasan_id'];
+        $kemasanId = intval($item['barang_kemasan_id']);
+        
+        // Panggil catatMutasi V2 (isSatuanBase = true, karena qty retur dalam bentuk eceran)
+        $resMutasi = catatMutasi(
+            $pdoBarang, 
+            $kemasanId, 
+            'MASUK_RETUR', 
+            $qtyRetur, 
+            'RETUR', 
+            $returHeaderId, 
+            "Retur Penjualan: {$noRetur}",
+            true // <-- PENTING: Beri tahu sistem ini satuan eceran
+        );
 
-        $stmtStok = $pdoBarang->prepare("SELECT COALESCE(stok, 0) FROM barang_kemasan WHERE id = ?");
-        $stmtStok->execute([$kemasanId]);
-        $stokSebelum = intval($stmtStok->fetchColumn());
-        $stokSesudah = $stokSebelum + $qtyRetur;
-
-        $stmtUpdStok = $pdoBarang->prepare("UPDATE barang_kemasan SET stok = ? WHERE id = ?");
-        $stmtUpdStok->execute([$stokSesudah, $kemasanId]);
-
-        try {
-            $stmtMutasi = $pdoBarang->prepare("INSERT INTO stok_mutasi (barang_kemasan_id, jenis_mutasi, qty, stok_sebelum, stok_sesudah, keterangan) VALUES (?, 'RETUR_MASUK', ?, ?, ?, ?)");
-            $stmtMutasi->execute([$kemasanId, $qtyRetur, $stokSebelum, $stokSesudah, 'Retur Penjualan: ' . $noRetur]);
-        } catch (Exception $e) {
-            // Biarkan jika tabel mutasi opsional
+        if (!$resMutasi['ok']) {
+            throw new Exception("Gagal mengembalikan stok: " . $resMutasi['error']);
         }
     }
 

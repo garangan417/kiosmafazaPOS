@@ -9,19 +9,16 @@ require_once __DIR__ . '/db_barang.php';
 
 function getPengaturanStok(PDO $pdo): array {
     try {
-        $stmt = $pdo->prepare("SELECT kunci, nilai FROM pengaturan WHERE kunci IN ('fitur_stok', 'izinkan_stok_minus')");
+        // Baca fitur_stok_v2, bukan fitur_stok lama
+        $stmt = $pdo->prepare("SELECT kunci, nilai FROM pengaturan WHERE kunci IN ('fitur_stok_v2')");
         $stmt->execute();
         $rows = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
 
         return [
-            'fitur_stok'         => ($rows['fitur_stok'] ?? '1') === '1',
-            'izinkan_stok_minus' => ($rows['izinkan_stok_minus'] ?? '0') === '1'
+            'fitur_stok' => ($rows['fitur_stok_v2'] ?? '1') === '1'
         ];
     } catch (PDOException $e) {
-        return [
-            'fitur_stok'         => true,
-            'izinkan_stok_minus' => false
-        ];
+        return ['fitur_stok' => true];
     }
 }
 
@@ -32,15 +29,8 @@ function isFiturStokAktif(PDO $pdo): bool {
 
 function setFiturStok(PDO $pdo, bool $status): bool {
     $val = $status ? '1' : '0';
-    $sql = "INSERT INTO pengaturan (kunci, nilai) VALUES ('fitur_stok', ?) 
-            ON DUPLICATE KEY UPDATE nilai = VALUES(nilai)";
-    $stmt = $pdo->prepare($sql);
-    return $stmt->execute([$val]);
-}
-
-function setIzinkanStokMinus(PDO $pdo, bool $status): bool {
-    $val = $status ? '1' : '0';
-    $sql = "INSERT INTO pengaturan (kunci, nilai) VALUES ('izinkan_stok_minus', ?) 
+    // Simpan ke fitur_stok_v2
+    $sql = "INSERT INTO pengaturan (kunci, nilai) VALUES ('fitur_stok_v2', ?) 
             ON DUPLICATE KEY UPDATE nilai = VALUES(nilai)";
     $stmt = $pdo->prepare($sql);
     return $stmt->execute([$val]);
@@ -53,6 +43,7 @@ function setIzinkanStokMinus(PDO $pdo, bool $status): bool {
 function getBarangFavorit(PDO $pdo): array {
     $sql = "SELECT 
                 bk.id AS kemasan_id,
+                b.id AS barang_id,
                 b.nama_barang,
                 bk.nama_kemasan,
                 bk.satuan,
@@ -67,10 +58,14 @@ function getBarangFavorit(PDO $pdo): array {
                 COALESCE(h.harga_jual_ecer, 0) AS harga_ecer,
                 COALESCE(h.harga_jual_grosir, 0) AS harga_grosir,
                 COALESCE(h.min_qty_grosir, 1) AS min_qty_grosir,
-                COALESCE(bk.stok, 0) AS stok
+                
+                -- AMBIL STOK DARI TABEL V2
+                COALESCE(bs.stok_base, 0) AS stok_base
+                
             FROM barang_kemasan bk
             JOIN barang b ON bk.barang_id = b.id
             LEFT JOIN harga_barang h ON bk.id = h.barang_kemasan_id
+            LEFT JOIN barang_stok bs ON b.id = bs.barang_id -- JOIN KE TABEL STOK V2
             WHERE bk.is_favorite = 1
             ORDER BY b.nama_barang ASC";
 
