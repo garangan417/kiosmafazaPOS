@@ -408,15 +408,7 @@ require_once BASE_PATH . 'partials/header.php';
                         <i class="bi bi-qr-code-scan"></i>
                       </button>
 
-                      <!-- 2. Tombol Tambah Varian Kemasan (hanya di baris pertama per barang) -->
-                      <?php if ($isBarangBaru): ?>
-                        <button class="btn btn-sm btn-outline-primary mb-1" 
-                                data-bs-toggle="modal" 
-                                data-bs-target="#modalKemasan<?= $row['barang_id']; ?>" 
-                                title="Tambah Varian Kemasan Baru">
-                          <i class="bi bi-box-arrow-in-down"></i>
-                        </button>
-                      <?php endif; ?>
+                     
 
                       <!-- 3. Dropdown Menu Edit & Hapus -->
                       <div class="dropdown d-inline-block mb-1">

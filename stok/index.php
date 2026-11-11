@@ -20,18 +20,21 @@ require_once BASE_PATH . 'partials/header.php';
             <h4 class="m-0 fw-bold"><i class="bi bi-box-seam me-2 text-primary"></i>Pemantauan Stok</h4>
             <p class="text-muted small mb-0">Pantau sisa stok fisik secara real-time. Untuk menambah stok, gunakan menu Kulakan.</p>
         </div>
-        <div class="d-flex gap-2 mt-3 mt-md-0">
+        <div class="d-flex flex-wrap gap-2 mt-3 mt-md-0">
             <a href="<?= BASE_URL; ?>stok/kartu_stok.php" class="btn btn-primary btn-sm fw-bold">
-    <i class="bi bi-clock-history me-1"></i> Kartu Stok
-</a>
-<a href="<?= BASE_URL; ?>kulakan/index.php" class="btn btn-success btn-sm fw-bold">
-    <i class="bi bi-cart-plus me-1"></i> Buka Kulakan (Restok)
-</a>
+                <i class="bi bi-clock-history me-1"></i> Kartu Stok
+            </a>
+            <a href="<?= BASE_URL; ?>stok/hubungkan.php" class="btn btn-outline-dark btn-sm fw-bold">
+                <i class="bi bi-link-45deg me-1"></i> Hubungkan Barang
+            </a>
+            <a href="<?= BASE_URL; ?>kulakan/index.php" class="btn btn-success btn-sm fw-bold">
+                <i class="bi bi-cart-plus me-1"></i> Buka Kulakan (Restok)
+            </a>
             <a href="../kasir/pengaturan_stok.php" class="btn btn-outline-secondary btn-sm">
                 <i class="bi bi-gear me-1"></i> Pengaturan
             </a>
             <button class="btn btn-outline-primary btn-sm" 
-                    hx-get="api_stok.php?action=load_tabel" 
+                    hx-get="api_stok.php?action=load_tabel&page=1" 
                     hx-target="#tblStokBody" 
                     hx-include="#inputCariStok"
                     hx-swap="innerHTML">
@@ -40,7 +43,7 @@ require_once BASE_PATH . 'partials/header.php';
         </div>
     </div>
 
-    <!-- Tabel Live Data Stok Barang (Full Width) -->
+    <!-- Tabel Live Data Stok Barang -->
     <div class="card shadow-sm border-0">
         <div class="card-header bg-white py-3">
             <div class="row align-items-center">
@@ -52,15 +55,15 @@ require_once BASE_PATH . 'partials/header.php';
                     <div class="input-group input-group-sm">
                         <span class="input-group-text bg-light"><i class="bi bi-search"></i></span>
                         <input type="search" 
-                        id="inputCariStok"
-                        name="q" 
-                        class="form-control" 
-                       placeholder="Cari nama barang atau scan barcode..."
-                       hx-get="api_stok.php?action=load_tabel&page=1" 
-                       hx-trigger="keyup changed delay:300ms, search" 
-                       hx-target="#tblStokBody"
-                       hx-swap="innerHTML"
-                       autofocus>
+                               id="inputCariStok"
+                               name="q" 
+                               class="form-control" 
+                               placeholder="Cari nama barang atau scan barcode..."
+                               hx-get="api_stok.php?action=load_tabel&page=1" 
+                               hx-trigger="keyup changed delay:300ms, search" 
+                               hx-target="#tblStokBody"
+                               hx-swap="innerHTML"
+                               autofocus>
                     </div>
                 </div>
             </div>
@@ -132,6 +135,39 @@ function setOpname(id, nama, stokSistemPcs, satuan) {
                     stok_fisik: parseInt(result.value),
                     q: searchVal
                 }
+            });
+        }
+    });
+}
+
+// Fungsi Minta Stok dari Gudang (Jembatan)
+function mintaStok(kemasanId, namaBarang) {
+    Swal.fire({
+        title: 'Minta Stok dari Gudang?',
+        text: "Sistem akan memindahkan 1 unit dari Gudang ke Etalase " + namaBarang,
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonColor: '#198754',
+        confirmButtonText: 'Ya, Minta Stok!',
+        cancelButtonText: 'Batal'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            fetch('api_stok.php?action=minta_stok', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: 'kemasan_id=' + kemasanId
+            })
+            .then(res => res.json())
+            .then(res => {
+                if (res.status === 'success') {
+                    Toast.fire({ icon: 'success', title: res.message });
+                    htmx.trigger('#tblStokBody', 'reloadStok');
+                } else {
+                    Swal.fire('Gagal!', res.message, 'error');
+                }
+            })
+            .catch(err => {
+                Swal.fire('Error!', 'Terjadi kesalahan jaringan.', 'error');
             });
         }
     });

@@ -33,6 +33,11 @@ function renderTabelStok($pdo, $searchQuery = '', $page = 1) {
         if ($stokBase <= 0) { $badgeColor = 'bg-danger'; $badgeText = 'Habis'; }
         elseif ($stokBase <= 5) { $badgeColor = 'bg-warning text-dark'; $badgeText = 'Menipis'; }
         else { $badgeColor = 'bg-success'; $badgeText = 'Aman'; }
+
+        // Cek apakah kemasan ini punya jembatan (untuk tombol Minta Stok)
+        $stmtCekJembatan = $pdo->prepare("SELECT id FROM jembatan_stok WHERE kemasan_tujuan_id = ? AND is_aktif_otomatis = 0");
+        $stmtCekJembatan->execute([$b['kemasan_id']]);
+        $punyaJembatan = $stmtCekJembatan->fetchColumn() !== false;
         ?>
         <tr>
             <td>
@@ -53,6 +58,12 @@ function renderTabelStok($pdo, $searchQuery = '', $page = 1) {
                 <?php endif; ?>
             </td>
             <td class="text-end">
+                <?php if ($punyaJembatan): ?>
+                    <button type="button" class="btn btn-sm btn-success fw-bold me-1" onclick="mintaStok(<?= $b['kemasan_id'] ?>, '<?= addslashes(htmlspecialchars($b['nama_barang'])) ?>')">
+                        <i class="bi bi-box-arrow-in-down me-1"></i> Minta Stok
+                    </button>
+                <?php endif; ?>
+                
                 <button type="button" 
                         class="btn btn-sm btn-outline-secondary"
                         onclick="setOpname(<?= $b['kemasan_id'] ?>, '<?= addslashes(htmlspecialchars($b['nama_barang'])) ?>', <?= $stokBase ?>, '<?= htmlspecialchars($b['satuan']) ?>')">
@@ -93,14 +104,12 @@ function renderTabelStok($pdo, $searchQuery = '', $page = 1) {
 
 $action      = $_GET['action'] ?? '';
 $searchQuery = $_GET['q'] ?? $_POST['q'] ?? '';
-$page        = max(1, intval($_GET['page'] ?? 1)); // TAMBAHKAN INI
+$page        = max(1, intval($_GET['page'] ?? 1));
 
 if ($action === 'load_tabel') {
-    renderTabelStok($pdoBarang, $searchQuery);
+    renderTabelStok($pdoBarang, $searchQuery, $page);
     exit;
 }
-
-
 
 if ($action === 'opname') {
     $kemasanId = intval($_POST['kemasan_id'] ?? 0);
@@ -131,6 +140,40 @@ if ($action === 'opname') {
         sendHtmxToast('error', 'Data Opname tidak valid!');
     }
 
-    renderTabelStok($pdoBarang, $searchQuery);
+    renderTabelStok($pdoBarang, $searchQuery, $page);
+    exit;
+}
+
+// ============================================================
+// HANDLER: MINTA STOK DARI JEMBATAN (MANUAL)
+// ============================================================
+if ($action === 'minta_stok') {
+    header('Content-Type: application/json');
+    $kemasanTujuanId = intval($_POST['kemasan_id'] ?? 0);
+    
+    // Cari jembatannya
+    $stmtJ = $pdoBarang->prepare("SELECT * FROM jembatan_stok WHERE kemasan_tujuan_id = ? AND is_aktif_otomatis = 0");
+    $stmtJ->execute([$kemasanTujuanId]);
+    $jembatan = $stmtJ->fetch(PDO::FETCH_ASSOC);
+
+    if (!$jembatan) {
+        echo json_encode(['status' => 'error', 'message' => 'Barang ini tidak memiliki pasangan jembatan.']);
+        exit;
+    }
+
+    // Panggil fungsi transfer manual
+    $res = transferStokManual(
+        $pdoBarang, 
+        $jembatan['kemasan_sumber_id'], 
+        $kemasanTujuanId, 
+        1, 
+        $jembatan['isi_konversi']
+    );
+
+    if ($res['ok']) {
+        echo json_encode(['status' => 'success', 'message' => 'Stok berhasil diminta dari Gudang!']);
+    } else {
+        echo json_encode(['status' => 'error', 'message' => $res['error']]);
+    }
     exit;
 }

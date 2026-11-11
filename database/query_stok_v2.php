@@ -310,3 +310,79 @@ if (!function_exists('getDaftarStokV2')) {
         ];
     }
 }
+
+if (!function_exists('transferStokManual')) {
+    function transferStokManual(PDO $pdo, int $kemasanSumberId, int $kemasanTujuanId, int $qtySumber, int $isiKonversi): array {
+        // 1. Validasi
+        if ($kemasanSumberId <= 0 || $kemasanTujuanId <= 0 || $qtySumber <= 0) {
+            return ['ok' => false, 'error' => 'Data transfer tidak valid.'];
+        }
+
+        // 2. Dapatkan info barang sumber & tujuan
+        $stmtS = $pdo->prepare("SELECT barang_id, nama_kemasan, satuan FROM barang_kemasan WHERE id = ?");
+        $stmtS->execute([$kemasanSumberId]);
+        $sumber = $stmtS->fetch(PDO::FETCH_ASSOC);
+
+        $stmtT = $pdo->prepare("SELECT barang_id, nama_kemasan, satuan FROM barang_kemasan WHERE id = ?");
+        $stmtT->execute([$kemasanTujuanId]);
+        $tujuan = $stmtT->fetch(PDO::FETCH_ASSOC);
+
+        if (!$sumber || !$tujuan) return ['ok' => false, 'error' => 'Kemasan tidak ditemukan.'];
+
+        // 3. Cek Stok Sumber
+        $stokSumber = getStokBase($pdo, $sumber['barang_id']);
+        if ($stokSumber < $qtySumber) {
+            return ['ok' => false, 'error' => 'Stok sumber tidak mencukupi.'];
+        }
+
+        try {
+            $pdo->beginTransaction();
+
+            // 4. Potong Stok Sumber
+            $qtyPotong = $qtySumber;
+            $stokSumberSesudah = $stokSumber - $qtyPotong;
+            $pdo->prepare("UPDATE barang_stok SET stok_base = ? WHERE barang_id = ?")->execute([$stokSumberSesudah, $sumber['barang_id']]);
+            
+            $pdo->prepare("INSERT INTO stok_mutasi (barang_id, barang_kemasan_id, jenis_mutasi, qty_base, qty_kemasan, isi_saat_itu, satuan_saat_itu, stok_sebelum, stok_sesudah, ref_type, ref_id, keterangan) VALUES (?, ?, 'KELUAR_TRANSFER', ?, ?, 1, ?, ?, ?, 'TRANSFER', NULL, 'Transfer Internal ke Etalase')")
+                ->execute([$sumber['barang_id'], $kemasanSumberId, $qtyPotong, $qtySumber, $sumber['satuan'], $stokSumber, $stokSumberSesudah]);
+
+            // 5. Tambah Stok Tujuan
+            $stokTujuan = getStokBase($pdo, $tujuan['barang_id']);
+            $qtyTambah = $qtySumber * $isiKonversi;
+            $stokTujuanSesudah = $stokTujuan + $qtyTambah;
+            $pdo->prepare("UPDATE barang_stok SET stok_base = ? WHERE barang_id = ?")->execute([$stokTujuanSesudah, $tujuan['barang_id']]);
+            
+            $pdo->prepare("INSERT INTO stok_mutasi (barang_id, barang_kemasan_id, jenis_mutasi, qty_base, qty_kemasan, isi_saat_itu, satuan_saat_itu, stok_sebelum, stok_sesudah, ref_type, ref_id, keterangan) VALUES (?, ?, 'MASUK_TRANSFER', ?, ?, 1, ?, ?, ?, 'TRANSFER', NULL, 'Terima Transfer dari Gudang')")
+                ->execute([$tujuan['barang_id'], $kemasanTujuanId, $qtyTambah, $qtyTambah, $tujuan['satuan'], $stokTujuan, $stokTujuanSesudah]);
+
+            $pdo->commit();
+            return ['ok' => true, 'error' => null];
+
+        } catch (PDOException $e) {
+            if ($pdo->inTransaction()) $pdo->rollBack();
+            return ['ok' => false, 'error' => $e->getMessage()];
+        }
+    }
+}
+
+if (!function_exists('cekDanJalankanTransferOtomatis')) {
+    function cekDanJalankanTransferOtomatis(PDO $pdo, int $kemasanTujuanId): bool {
+        // Cari aturan jembatan yang aktif otomatis
+        $stmtJ = $pdo->prepare("SELECT * FROM jembatan_stok WHERE kemasan_tujuan_id = ? AND is_aktif_otomatis = 1");
+        $stmtJ->execute([$kemasanTujuanId]);
+        $aturan = $stmtJ->fetch(PDO::FETCH_ASSOC);
+
+        if (!$aturan) return false; // Tidak ada aturan otomatis
+
+        // Panggil fungsi transfer manual
+        $res = transferStokManual(
+            $pdo, 
+            $aturan['kemasan_sumber_id'], 
+            $aturan['kemasan_tujuan_id'], 
+            1, // Tarik 1
+            $aturan['isi_konversi']
+        );
+
+        return $res['ok'];
+    }
+}
