@@ -254,6 +254,22 @@ try {
         INSERT IGNORE INTO barang_stok (barang_id, stok_base)
         SELECT id, 0 FROM barang
     ");
+    
+        // ============================================================
+    // 6. TABEL JEMBATAN STOK (HUBUNGAN ANTAR KEMASAN)
+    // ============================================================
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS jembatan_stok (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            kemasan_sumber_id INT NOT NULL,
+            kemasan_tujuan_id INT NOT NULL,
+            isi_konversi INT NOT NULL DEFAULT 12,
+            is_aktif_otomatis TINYINT(1) NOT NULL DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (kemasan_sumber_id) REFERENCES barang_kemasan(id) ON DELETE CASCADE,
+            FOREIGN KEY (kemasan_tujuan_id) REFERENCES barang_kemasan(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    ");
 
     $pdoBarang = $pdo;
 
