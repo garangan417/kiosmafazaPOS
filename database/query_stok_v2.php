@@ -5,51 +5,22 @@
 require_once __DIR__ . '/db_barang.php';
 
 // ============================================================
-// HELPER: BASE UNIT
+// HELPER: BASE UNIT & STOK
 // ============================================================
-
 if (!function_exists('getSatuanBaseBarang')) {
     function getSatuanBaseBarang(PDO $pdo, int $barangId): ?string {
-        $stmt = $pdo->prepare("
-            SELECT satuan FROM barang_kemasan 
-            WHERE barang_id = ? 
-            ORDER BY id ASC LIMIT 1
-        ");
+        $stmt = $pdo->prepare("SELECT satuan FROM barang_kemasan WHERE barang_id = ? ORDER BY id ASC LIMIT 1");
         $stmt->execute([$barangId]);
-        $satuan = $stmt->fetchColumn();
-        return $satuan !== false ? (string) $satuan : null;
+        return $stmt->fetchColumn() ?: null;
     }
 }
-
-if (!function_exists('getKemasanPertamaBarang')) {
-    function getKemasanPertamaBarang(PDO $pdo, int $barangId): ?array {
-        $stmt = $pdo->prepare("
-            SELECT * FROM barang_kemasan 
-            WHERE barang_id = ? 
-            ORDER BY id ASC LIMIT 1
-        ");
-        $stmt->execute([$barangId]);
-        $row = $stmt->fetch(PDO::FETCH_ASSOC);
-        return $row ?: null;
-    }
-}
-
-// ============================================================
-// HELPER: PASTIKAN BARIS barang_stok ADA
-// ============================================================
 
 if (!function_exists('ensureBarangStok')) {
     function ensureBarangStok(PDO $pdo, int $barangId): void {
-        $stmt = $pdo->prepare("
-            INSERT IGNORE INTO barang_stok (barang_id, stok_base) VALUES (?, 0)
-        ");
+        $stmt = $pdo->prepare("INSERT IGNORE INTO barang_stok (barang_id, stok_base) VALUES (?, 0)");
         $stmt->execute([$barangId]);
     }
 }
-
-// ============================================================
-// BACA STOK
-// ============================================================
 
 if (!function_exists('getStokBase')) {
     function getStokBase(PDO $pdo, int $barangId): int {
@@ -60,62 +31,75 @@ if (!function_exists('getStokBase')) {
     }
 }
 
-if (!function_exists('getStokTampilanKemasan')) {
-    function getStokTampilanKemasan(PDO $pdo, int $kemasanId): array {
-        $stmt = $pdo->prepare("
-            SELECT bk.barang_id, COALESCE(bk.isi,1) AS isi, bk.satuan
-            FROM barang_kemasan bk WHERE bk.id = ?
-        ");
-        $stmt->execute([$kemasanId]);
-        $row = $stmt->fetch(PDO::FETCH_ASSOC);
-        if (!$row) return ['full' => 0, 'sisa' => 0, 'isi' => 1, 'satuan' => ''];
+// ============================================================
+// FUNGSI TRANSFER INTERNAL (Mencegah Infinite Loop)
+// ============================================================
+if (!function_exists('transferStokInternal')) {
+    function transferStokInternal(PDO $pdo, int $kemasanSumberId, int $kemasanTujuanId, int $qtySumber, int $isiKonversi): bool {
+        try {
+            $stmtS = $pdo->prepare("SELECT barang_id, satuan FROM barang_kemasan WHERE id = ?");
+            $stmtS->execute([$kemasanSumberId]);
+            $sumber = $stmtS->fetch(PDO::FETCH_ASSOC);
 
-        $isi = max(1, (int) $row['isi']);
-        $stokBase = getStokBase($pdo, (int) $row['barang_id']);
-        return [
-            'full'   => intdiv($stokBase, $isi),
-            'sisa'   => $stokBase % $isi,
-            'isi'    => $isi,
-            'satuan' => (string) $row['satuan'],
-        ];
-    }
-}
+            $stmtT = $pdo->prepare("SELECT barang_id, satuan FROM barang_kemasan WHERE id = ?");
+            $stmtT->execute([$kemasanTujuanId]);
+            $tujuan = $stmtT->fetch(PDO::FETCH_ASSOC);
 
-if (!function_exists('getStokSemuaKemasanBarang')) {
-    function getStokSemuaKemasanBarang(PDO $pdo, int $barangId): array {
-        $stokBase = getStokBase($pdo, $barangId);
-        $stmt = $pdo->prepare("
-            SELECT id AS kemasan_id, nama_kemasan, satuan, COALESCE(isi,1) AS isi
-            FROM barang_kemasan WHERE barang_id = ? ORDER BY id ASC
-        ");
-        $stmt->execute([$barangId]);
-        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            if (!$sumber || !$tujuan) return false;
 
-        $result = [];
-        foreach ($rows as $r) {
-            $isi = max(1, (int) $r['isi']);
-            $result[] = [
-                'kemasan_id'    => (int) $r['kemasan_id'],
-                'nama_kemasan'  => $r['nama_kemasan'],
-                'satuan'        => $r['satuan'],
-                'isi'           => $isi,
-                'full'          => intdiv($stokBase, $isi),
-                'sisa'          => $stokBase % $isi,
-                'stok_base'     => $stokBase,
-            ];
+            $stokSumber = getStokBase($pdo, $sumber['barang_id']);
+            if ($stokSumber < $qtySumber) return false;
+
+            // Potong Sumber
+            $pdo->prepare("UPDATE barang_stok SET stok_base = stok_base - ? WHERE barang_id = ?")->execute([$qtySumber, $sumber['barang_id']]);
+            $pdo->prepare("INSERT INTO stok_mutasi (barang_id, barang_kemasan_id, jenis_mutasi, qty_base, qty_kemasan, isi_saat_itu, satuan_saat_itu, stok_sebelum, stok_sesudah, ref_type, ref_id, keterangan) VALUES (?, ?, 'KELUAR_TRANSFER', ?, ?, 1, ?, ?, ?, 'TRANSFER', NULL, 'Auto-Transfer ke Etalase')")
+                ->execute([$sumber['barang_id'], $kemasanSumberId, $qtySumber, $qtySumber, $sumber['satuan'], $stokSumber, $stokSumber - $qtySumber]);
+
+            // Tambah Tujuan
+            $qtyTambah = $qtySumber * $isiKonversi;
+            $stokTujuan = getStokBase($pdo, $tujuan['barang_id']);
+            $pdo->prepare("UPDATE barang_stok SET stok_base = stok_base + ? WHERE barang_id = ?")->execute([$qtyTambah, $tujuan['barang_id']]);
+            $pdo->prepare("INSERT INTO stok_mutasi (barang_id, barang_kemasan_id, jenis_mutasi, qty_base, qty_kemasan, isi_saat_itu, satuan_saat_itu, stok_sebelum, stok_sesudah, ref_type, ref_id, keterangan) VALUES (?, ?, 'MASUK_TRANSFER', ?, ?, 1, ?, ?, ?, 'TRANSFER', NULL, 'Auto-Transfer dari Gudang')")
+                ->execute([$tujuan['barang_id'], $kemasanTujuanId, $qtyTambah, $qtyTambah, $tujuan['satuan'], $stokTujuan, $stokTujuan + $qtyTambah]);
+
+            return true;
+        } catch (PDOException $e) {
+            error_log("Transfer Internal Error: " . $e->getMessage());
+            return false;
         }
-        return $result;
     }
 }
 
 // ============================================================
-// CATAT MUTASI STOK (inti API)
+// FUNGSI TRANSFER MANUAL (Dari Tombol)
 // ============================================================
+if (!function_exists('transferStokManual')) {
+    function transferStokManual(PDO $pdo, int $kemasanSumberId, int $kemasanTujuanId, int $qtySumber, int $isiKonversi): array {
+        if ($kemasanSumberId <= 0 || $kemasanTujuanId <= 0 || $qtySumber <= 0) {
+            return ['ok' => false, 'error' => 'Data transfer tidak valid.'];
+        }
 
+        try {
+            $pdo->beginTransaction();
+            $ok = transferStokInternal($pdo, $kemasanSumberId, $kemasanTujuanId, $qtySumber, $isiKonversi);
+            if ($ok) {
+                $pdo->commit();
+                return ['ok' => true, 'error' => null];
+            } else {
+                $pdo->rollBack();
+                return ['ok' => false, 'error' => 'Stok sumber tidak mencukupi atau data tidak ditemukan.'];
+            }
+        } catch (PDOException $e) {
+            if ($pdo->inTransaction()) $pdo->rollBack();
+            return ['ok' => false, 'error' => $e->getMessage()];
+        }
+    }
+}
+
+// ============================================================
+// CATAT MUTASI STOK (INTI API + OTOMATISASI)
+// ============================================================
 if (!function_exists('catatMutasi')) {
-    /**
-     * @param bool $isSatuanBase Jika TRUE, qtyInput dianggap sudah dalam satuan terkecil (tidak dikali isi).
-     */
     function catatMutasi(
         PDO $pdo,
         int $kemasanId,
@@ -124,19 +108,14 @@ if (!function_exists('catatMutasi')) {
         ?string $refType = null,
         ?int $refId = null,
         string $keterangan = '',
-        bool $isSatuanBase = false // <--- PARAMETER BARU
+        bool $isSatuanBase = false
     ): array {
         $fail = fn(string $msg) => ['ok' => false, 'error' => $msg, 'stok_sebelum' => 0, 'stok_sesudah' => 0, 'qty_base' => 0];
 
         if ($kemasanId <= 0) return $fail('Kemasan ID tidak valid.');
-        if ($qtyInput <= 0) return $fail('Qty harus > 0.');
+        if ($jenisMutasi !== 'OPNAME_SET' && $qtyInput <= 0) return $fail('Qty harus > 0.');
 
-        // Ambil info kemasan + barang
-        $stmtK = $pdo->prepare("
-            SELECT bk.id, bk.barang_id, bk.nama_kemasan, bk.satuan,
-                   COALESCE(bk.isi,1) AS isi
-            FROM barang_kemasan bk WHERE bk.id = ?
-        ");
+        $stmtK = $pdo->prepare("SELECT bk.id, bk.barang_id, bk.nama_kemasan, bk.satuan, COALESCE(bk.isi,1) AS isi FROM barang_kemasan bk WHERE bk.id = ?");
         $stmtK->execute([$kemasanId]);
         $kem = $stmtK->fetch(PDO::FETCH_ASSOC);
         if (!$kem) return $fail('Kemasan tidak ditemukan.');
@@ -144,29 +123,18 @@ if (!function_exists('catatMutasi')) {
         $barangId = (int) $kem['barang_id'];
         $isi      = max(1, (int) $kem['isi']);
         $satuan   = (string) $kem['satuan'];
-        
-        // Tentukan qty base
-        if ($isSatuanBase) {
-            $qtyBase = $qtyInput; // Jika sudah eceran, jangan dikali
-        } else {
-            $qtyBase = $qtyInput * $isi;
-        }
+        $qtyBase  = $isSatuanBase ? $qtyInput : ($qtyInput * $isi);
 
-        // Pastikan baris stok ada
         ensureBarangStok($pdo, $barangId);
 
         try {
             $isTransaksiSendiri = !$pdo->inTransaction();
-            if ($isTransaksiSendiri) {
-                $pdo->beginTransaction();
-            }
+            if ($isTransaksiSendiri) $pdo->beginTransaction();
 
-            // Lock baris stok
             $stmtS = $pdo->prepare("SELECT stok_base FROM barang_stok WHERE barang_id = ? FOR UPDATE");
             $stmtS->execute([$barangId]);
             $stokSebelum = (int) $stmtS->fetchColumn();
 
-            // Hitung arah
             $isMasuk = (strpos($jenisMutasi, 'MASUK') === 0);
             if ($jenisMutasi === 'OPNAME_SET') {
                 $qtyBase = $qtyInput;
@@ -175,6 +143,8 @@ if (!function_exists('catatMutasi')) {
                 $stokSesudah = $stokSebelum + $qtyBase;
             } else {
                 $stokSesudah = $stokSebelum - $qtyBase;
+                
+                // PENGAMAN: Jika stok tidak cukup, batalkan
                 if ($stokSesudah < 0) {
                     if ($isTransaksiSendiri) $pdo->rollBack();
                     return $fail("Stok tidak cukup. Stok saat ini: {$stokSebelum} {$satuan}, butuh: {$qtyBase} {$satuan}.");
@@ -182,82 +152,51 @@ if (!function_exists('catatMutasi')) {
             }
 
             // Update barang_stok
-            $stmtU = $pdo->prepare("UPDATE barang_stok SET stok_base = ? WHERE barang_id = ?");
-            $stmtU->execute([$stokSesudah, $barangId]);
+            $pdo->prepare("UPDATE barang_stok SET stok_base = ? WHERE barang_id = ?")->execute([$stokSesudah, $barangId]);
 
             // Insert mutasi
-            $stmtM = $pdo->prepare("
-                INSERT INTO stok_mutasi 
-                (barang_id, barang_kemasan_id, jenis_mutasi, qty_base, qty_kemasan,
-                 isi_saat_itu, satuan_saat_itu, stok_sebelum, stok_sesudah,
-                 ref_type, ref_id, keterangan)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ");
-            $stmtM->execute([
-                $barangId, $kemasanId, $jenisMutasi,
-                $qtyBase, $qtyInput, $isi, $satuan,
-                $stokSebelum, $stokSesudah,
-                $refType, $refId, $keterangan !== '' ? $keterangan : null
-            ]);
+            $stmtM = $pdo->prepare("INSERT INTO stok_mutasi (barang_id, barang_kemasan_id, jenis_mutasi, qty_base, qty_kemasan, isi_saat_itu, satuan_saat_itu, stok_sebelum, stok_sesudah, ref_type, ref_id, keterangan) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            $stmtM->execute([$barangId, $kemasanId, $jenisMutasi, $qtyBase, $qtyInput, $isi, $satuan, $stokSebelum, $stokSesudah, $refType, $refId, $keterangan !== '' ? $keterangan : null]);
 
-            if ($isTransaksiSendiri) {
-                $pdo->commit();
+            // ============================================================
+            // OTOMATISASI JEMBATAN (Dipanggil SETELAH stok ter-update)
+            // ============================================================
+            // Cek apakah stok sekarang 0, DAN bukan mutasi dari transfer (biar gak loop)
+            if ($stokSesudah == 0 && strpos($jenisMutasi, 'TRANSFER') === false) {
+                $stmtJ = $pdo->prepare("SELECT * FROM jembatan_stok WHERE kemasan_tujuan_id = ? AND is_aktif_otomatis = 1");
+                $stmtJ->execute([$kemasanId]);
+                $jembatan = $stmtJ->fetch(PDO::FETCH_ASSOC);
+
+                if ($jembatan) {
+                    $ok = transferStokInternal(
+                        $pdo, 
+                        $jembatan['kemasan_sumber_id'], 
+                        $kemasanId, 
+                        1, 
+                        $jembatan['isi_konversi']
+                    );
+                    
+                    if ($ok) {
+                        $stmtS->execute([$barangId]);
+                        $stokSesudah = (int) $stmtS->fetchColumn();
+                    }
+                }
             }
+            // ============================================================
 
-            return [
-                'ok' => true,
-                'error' => null,
-                'stok_sebelum' => $stokSebelum,
-                'stok_sesudah' => $stokSesudah,
-                'qty_base' => $qtyBase,
-            ];
+            if ($isTransaksiSendiri) $pdo->commit();
+
+            return ['ok' => true, 'error' => null, 'stok_sebelum' => $stokSebelum, 'stok_sesudah' => $stokSesudah, 'qty_base' => $qtyBase];
         } catch (PDOException $e) {
-            if ($isTransaksiSendiri && $pdo->inTransaction()) {
-                $pdo->rollBack();
-            }
-            error_log("catatMutasi error: " . $e->getMessage());
+            if ($isTransaksiSendiri && $pdo->inTransaction()) $pdo->rollBack();
             return $fail('DB error: ' . $e->getMessage());
         }
     }
 }
 
 // ============================================================
-// REKALKULASI STOK (safety net)
+// PEMBACAAN LIST STOK (Paginasi)
 // ============================================================
-
-if (!function_exists('recalculateStok')) {
-    function recalculateStok(PDO $pdo, int $barangId): int {
-        $stmt = $pdo->prepare("
-            SELECT 
-                SUM(CASE WHEN jenis_mutasi LIKE 'MASUK%' THEN qty_base ELSE 0 END) AS total_in,
-                SUM(CASE WHEN jenis_mutasi LIKE 'KELUAR%' THEN qty_base ELSE 0 END) AS total_out
-            FROM stok_mutasi WHERE barang_id = ?
-        ");
-        $stmt->execute([$barangId]);
-        $row = $stmt->fetch(PDO::FETCH_ASSOC);
-        $totalIn  = (int) ($row['total_in'] ?? 0);
-        $totalOut = (int) ($row['total_out'] ?? 0);
-
-        $stmtO = $pdo->prepare("
-            SELECT stok_sesudah FROM stok_mutasi 
-            WHERE barang_id = ? AND jenis_mutasi = 'OPNAME_SET'
-            ORDER BY id DESC LIMIT 1
-        ");
-        $stmtO->execute([$barangId]);
-        $lastOpname = $stmtO->fetchColumn();
-
-        $stokBaru = ($lastOpname !== false)
-            ? (int) $lastOpname
-            : ($totalIn - $totalOut);
-
-        ensureBarangStok($pdo, $barangId);
-        $stmtU = $pdo->prepare("UPDATE barang_stok SET stok_base = ? WHERE barang_id = ?");
-        $stmtU->execute([$stokBaru, $barangId]);
-
-        return $stokBaru;
-    }
-}
-
 if (!function_exists('getDaftarStokV2')) {
     function getDaftarStokV2(PDO $pdo, string $search = '', int $page = 1, int $limit = 15): array {
         $offset = ($page - 1) * $limit;
@@ -270,32 +209,12 @@ if (!function_exists('getDaftarStokV2')) {
             $params = [$term, $term, $term];
         }
 
-        // Query Hitung Total Baris (untuk paginasi)
-        $countSql = "SELECT COUNT(DISTINCT b.id) 
-                     FROM barang_kemasan bk
-                     JOIN barang b ON bk.barang_id = b.id
-                     LEFT JOIN barang_barcode bb ON bk.id = bb.barang_kemasan_id
-                     $whereSql";
+        $countSql = "SELECT COUNT(DISTINCT b.id) FROM barang_kemasan bk JOIN barang b ON bk.barang_id = b.id LEFT JOIN barang_barcode bb ON bk.id = bb.barang_kemasan_id $whereSql";
         $stmtCount = $pdo->prepare($countSql);
         $stmtCount->execute($params);
         $totalItems = (int) $stmtCount->fetchColumn();
 
-        // Query Data dengan LIMIT
-        $sql = "SELECT DISTINCT
-                    bk.id AS kemasan_id,
-                    b.id AS barang_id,
-                    b.nama_barang,
-                    bk.nama_kemasan,
-                    bk.satuan,
-                    COALESCE(bk.isi, 1) AS isi,
-                    COALESCE(bs.stok_base, 0) AS stok_base
-                FROM barang_kemasan bk
-                JOIN barang b ON bk.barang_id = b.id
-                LEFT JOIN barang_stok bs ON b.id = bs.barang_id
-                LEFT JOIN barang_barcode bb ON bk.id = bb.barang_kemasan_id
-                $whereSql
-                ORDER BY b.nama_barang ASC
-                LIMIT $limit OFFSET $offset";
+        $sql = "SELECT DISTINCT bk.id AS kemasan_id, b.id AS barang_id, b.nama_barang, bk.nama_kemasan, bk.satuan, COALESCE(bk.isi, 1) AS isi, COALESCE(bs.stok_base, 0) AS stok_base FROM barang_kemasan bk JOIN barang b ON bk.barang_id = b.id LEFT JOIN barang_stok bs ON b.id = bs.barang_id LEFT JOIN barang_barcode bb ON bk.id = bb.barang_kemasan_id $whereSql ORDER BY b.nama_barang ASC LIMIT $limit OFFSET $offset";
         
         $stmt = $pdo->prepare($sql);
         $stmt->execute($params);
@@ -308,81 +227,5 @@ if (!function_exists('getDaftarStokV2')) {
             'current_page' => $page,
             'limit' => $limit
         ];
-    }
-}
-
-if (!function_exists('transferStokManual')) {
-    function transferStokManual(PDO $pdo, int $kemasanSumberId, int $kemasanTujuanId, int $qtySumber, int $isiKonversi): array {
-        // 1. Validasi
-        if ($kemasanSumberId <= 0 || $kemasanTujuanId <= 0 || $qtySumber <= 0) {
-            return ['ok' => false, 'error' => 'Data transfer tidak valid.'];
-        }
-
-        // 2. Dapatkan info barang sumber & tujuan
-        $stmtS = $pdo->prepare("SELECT barang_id, nama_kemasan, satuan FROM barang_kemasan WHERE id = ?");
-        $stmtS->execute([$kemasanSumberId]);
-        $sumber = $stmtS->fetch(PDO::FETCH_ASSOC);
-
-        $stmtT = $pdo->prepare("SELECT barang_id, nama_kemasan, satuan FROM barang_kemasan WHERE id = ?");
-        $stmtT->execute([$kemasanTujuanId]);
-        $tujuan = $stmtT->fetch(PDO::FETCH_ASSOC);
-
-        if (!$sumber || !$tujuan) return ['ok' => false, 'error' => 'Kemasan tidak ditemukan.'];
-
-        // 3. Cek Stok Sumber
-        $stokSumber = getStokBase($pdo, $sumber['barang_id']);
-        if ($stokSumber < $qtySumber) {
-            return ['ok' => false, 'error' => 'Stok sumber tidak mencukupi.'];
-        }
-
-        try {
-            $pdo->beginTransaction();
-
-            // 4. Potong Stok Sumber
-            $qtyPotong = $qtySumber;
-            $stokSumberSesudah = $stokSumber - $qtyPotong;
-            $pdo->prepare("UPDATE barang_stok SET stok_base = ? WHERE barang_id = ?")->execute([$stokSumberSesudah, $sumber['barang_id']]);
-            
-            $pdo->prepare("INSERT INTO stok_mutasi (barang_id, barang_kemasan_id, jenis_mutasi, qty_base, qty_kemasan, isi_saat_itu, satuan_saat_itu, stok_sebelum, stok_sesudah, ref_type, ref_id, keterangan) VALUES (?, ?, 'KELUAR_TRANSFER', ?, ?, 1, ?, ?, ?, 'TRANSFER', NULL, 'Transfer Internal ke Etalase')")
-                ->execute([$sumber['barang_id'], $kemasanSumberId, $qtyPotong, $qtySumber, $sumber['satuan'], $stokSumber, $stokSumberSesudah]);
-
-            // 5. Tambah Stok Tujuan
-            $stokTujuan = getStokBase($pdo, $tujuan['barang_id']);
-            $qtyTambah = $qtySumber * $isiKonversi;
-            $stokTujuanSesudah = $stokTujuan + $qtyTambah;
-            $pdo->prepare("UPDATE barang_stok SET stok_base = ? WHERE barang_id = ?")->execute([$stokTujuanSesudah, $tujuan['barang_id']]);
-            
-            $pdo->prepare("INSERT INTO stok_mutasi (barang_id, barang_kemasan_id, jenis_mutasi, qty_base, qty_kemasan, isi_saat_itu, satuan_saat_itu, stok_sebelum, stok_sesudah, ref_type, ref_id, keterangan) VALUES (?, ?, 'MASUK_TRANSFER', ?, ?, 1, ?, ?, ?, 'TRANSFER', NULL, 'Terima Transfer dari Gudang')")
-                ->execute([$tujuan['barang_id'], $kemasanTujuanId, $qtyTambah, $qtyTambah, $tujuan['satuan'], $stokTujuan, $stokTujuanSesudah]);
-
-            $pdo->commit();
-            return ['ok' => true, 'error' => null];
-
-        } catch (PDOException $e) {
-            if ($pdo->inTransaction()) $pdo->rollBack();
-            return ['ok' => false, 'error' => $e->getMessage()];
-        }
-    }
-}
-
-if (!function_exists('cekDanJalankanTransferOtomatis')) {
-    function cekDanJalankanTransferOtomatis(PDO $pdo, int $kemasanTujuanId): bool {
-        // Cari aturan jembatan yang aktif otomatis
-        $stmtJ = $pdo->prepare("SELECT * FROM jembatan_stok WHERE kemasan_tujuan_id = ? AND is_aktif_otomatis = 1");
-        $stmtJ->execute([$kemasanTujuanId]);
-        $aturan = $stmtJ->fetch(PDO::FETCH_ASSOC);
-
-        if (!$aturan) return false; // Tidak ada aturan otomatis
-
-        // Panggil fungsi transfer manual
-        $res = transferStokManual(
-            $pdo, 
-            $aturan['kemasan_sumber_id'], 
-            $aturan['kemasan_tujuan_id'], 
-            1, // Tarik 1
-            $aturan['isi_konversi']
-        );
-
-        return $res['ok'];
     }
 }

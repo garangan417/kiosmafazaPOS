@@ -9,8 +9,11 @@ if (session_status() === PHP_SESSION_NONE) {
 
 require_once __DIR__ . '/../config.php';
 require_once BASE_PATH . 'database/db_barang.php';
+require_once BASE_PATH . 'database/query_stok_v2.php'; // Panggil mesin V2
 
-// Proses Tambah Jembatan
+// ============================================================
+// HANDLER POST: TAMBAH JEMBATAN
+// ============================================================
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'hubungkan') {
     $sumberId = intval($_POST['kemasan_sumber'] ?? 0);
     $tujuanId = intval($_POST['kemasan_tujuan'] ?? 0);
@@ -38,7 +41,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     exit;
 }
 
-// Proses Hapus Jembatan
+// ============================================================
+// HANDLER POST: PUTUSKAN JEMBATAN
+// ============================================================
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'putuskan') {
     $id = intval($_POST['id'] ?? 0);
     if ($id > 0) {
@@ -49,7 +54,66 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     exit;
 }
 
-// Ambil semua data barang
+// ============================================================
+// HANDLER AJAX: TOGGLE SWITCH OTOMATIS (DENGAN AUTO-FILL STOK)
+// ============================================================
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'toggle_otomatis') {
+    header('Content-Type: application/json');
+    $id = intval($_POST['id'] ?? 0);
+    $status = intval($_POST['status'] ?? 0);
+    
+    if ($id > 0) {
+        try {
+            // 1. Update status saklar
+            $stmt = $pdoBarang->prepare("UPDATE jembatan_stok SET is_aktif_otomatis = ? WHERE id = ?");
+            $stmt->execute([$status, $id]);
+
+            // 2. Jika saklar dinyalakan (status = 1), cek stok Etalase
+            if ($status == 1) {
+                // Ambil data jembatan
+                $stmtJ = $pdoBarang->prepare("SELECT * FROM jembatan_stok WHERE id = ?");
+                $stmtJ->execute([$id]);
+                $jembatan = $stmtJ->fetch(PDO::FETCH_ASSOC);
+
+                if ($jembatan) {
+                    $kemasanTujuanId = (int) $jembatan['kemasan_tujuan_id'];
+                    $kemasanSumberId = (int) $jembatan['kemasan_sumber_id'];
+                    $isiKonversi = (int) $jembatan['isi_konversi'];
+
+                    // Cek stok Etalase saat ini
+                    $stmtT = $pdoBarang->prepare("SELECT barang_id FROM barang_kemasan WHERE id = ?");
+                    $stmtT->execute([$kemasanTujuanId]);
+                    $barangTujuanId = (int) $stmtT->fetchColumn();
+
+                    $stokEtalase = getStokBase($pdoBarang, $barangTujuanId);
+
+                    // JIKA STOK 0 (atau kurang dari 1), LANGSUNG TARIK 1 DARI GUDANG
+                    if ($stokEtalase <= 0) {
+                        $res = transferStokManual($pdoBarang, $kemasanSumberId, $kemasanTujuanId, 1, $isiKonversi);
+                        if ($res['ok']) {
+                            echo json_encode(['status' => 'success', 'message' => 'Otomatis aktif & stok berhasil diisi ulang!']);
+                            exit;
+                        } else {
+                            echo json_encode(['status' => 'error', 'message' => 'Gagal isi ulang: ' . $res['error']]);
+                            exit;
+                        }
+                    }
+                }
+            }
+
+            echo json_encode(['status' => 'success', 'message' => 'Status berhasil diubah.']);
+        } catch (Exception $e) {
+            echo json_encode(['status' => 'error', 'message' => $e->getMessage()]);
+        }
+    } else {
+        echo json_encode(['status' => 'error', 'message' => 'ID tidak valid.']);
+    }
+    exit;
+}
+
+// ============================================================
+// AMBIL DATA UNTUK DROPDOWN
+// ============================================================
 $listBarang = $pdoBarang->query("
     SELECT bk.id AS kemasan_id, b.nama_barang, bk.nama_kemasan, bk.satuan, bk.isi
     FROM barang_kemasan bk
@@ -145,13 +209,14 @@ require_once BASE_PATH . 'partials/header.php';
                 <th>Sumber (Gudang)</th>
                 <th>Tujuan (Etalase)</th>
                 <th class="text-center">Konversi</th>
-                <th class="text-end">Aksi</th>
+                <th class="text-center">Mode</th>
+                <th class="text-end">Putuskan</th>
               </tr>
             </thead>
             <tbody>
               <?php if (empty($listJembatan)): ?>
                 <tr>
-                  <td colspan="4" class="text-center text-muted py-4">Belum ada barang yang dihubungkan.</td>
+                  <td colspan="5" class="text-center text-muted py-4">Belum ada barang yang dihubungkan.</td>
                 </tr>
               <?php else: ?>
                 <?php foreach ($listJembatan as $j): ?>
@@ -167,11 +232,22 @@ require_once BASE_PATH . 'partials/header.php';
                     <td class="text-center fw-bold font-monospace">
                       1 : <?= $j['isi_konversi']; ?>
                     </td>
+                    <td class="text-center">
+                      <div class="form-check form-switch d-flex align-items-center justify-content-center">
+                        <input class="form-check-input me-2" type="checkbox" role="switch" 
+                               id="switchOtomatis<?= $j['id']; ?>" 
+                               <?= $j['is_aktif_otomatis'] == 1 ? 'checked' : ''; ?>
+                               onchange="toggleOtomatis(<?= $j['id']; ?>, this.checked)">
+                        <label class="form-check-label small fw-bold" for="switchOtomatis<?= $j['id']; ?>" style="min-width: 60px; text-align: left;">
+                            <?= $j['is_aktif_otomatis'] == 1 ? 'Otomatis' : 'Manual'; ?>
+                        </label>
+                      </div>
+                    </td>
                     <td class="text-end">
                       <form action="" method="POST" onsubmit="return confirm('Putuskan hubungan ini?');">
                         <input type="hidden" name="action" value="putuskan">
                         <input type="hidden" name="id" value="<?= $j['id']; ?>">
-                        <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-x-lg"></i> Putuskan</button>
+                        <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-x-lg"></i></button>
                       </form>
                     </td>
                   </tr>
@@ -187,6 +263,7 @@ require_once BASE_PATH . 'partials/header.php';
 
 <script>
 const Toast = Swal.mixin({ toast: true, position: 'top-end', showConfirmButton: false, timer: 1500, timerProgressBar: true });
+
 <?php if (isset($_SESSION['toast_success'])): ?>
     Toast.fire({ icon: 'success', title: '<?= htmlspecialchars($_SESSION['toast_success']); ?>' });
     <?php unset($_SESSION['toast_success']); ?>
@@ -195,6 +272,32 @@ const Toast = Swal.mixin({ toast: true, position: 'top-end', showConfirmButton: 
     Toast.fire({ icon: 'error', title: '<?= htmlspecialchars($_SESSION['toast_error']); ?>' });
     <?php unset($_SESSION['toast_error']); ?>
 <?php endif; ?>
+
+function toggleOtomatis(id, status) {
+    fetch('hubungkan.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `action=toggle_otomatis&id=${id}&status=${status ? 1 : 0}`
+    })
+    .then(res => res.json())
+    .then(res => {
+        if (res.status === 'success') {
+            Toast.fire({ icon: 'success', title: res.message });
+            // Update label teks di sebelah switch
+            const label = document.querySelector(`label[for="switchOtomatis${id}"]`);
+            if (label) {
+                label.innerText = status ? 'Otomatis' : 'Manual';
+            }
+            // Refresh tabel agar stok terbaru muncul (jika auto-fill berjalan)
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            Swal.fire('Gagal!', res.message, 'error');
+        }
+    })
+    .catch(err => {
+        Swal.fire('Error!', 'Terjadi kesalahan jaringan.', 'error');
+    });
+}
 </script>
 
 <?php require_once BASE_PATH . 'partials/footer.php'; ?>
