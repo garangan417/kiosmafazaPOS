@@ -151,8 +151,8 @@ if ($action === 'minta_stok') {
     header('Content-Type: application/json');
     $kemasanTujuanId = intval($_POST['kemasan_id'] ?? 0);
     
-    // Cari jembatannya
-    $stmtJ = $pdoBarang->prepare("SELECT * FROM jembatan_stok WHERE kemasan_tujuan_id = ? AND is_aktif_otomatis = 0");
+    // Cari jembatannya (TANPA FILTER is_aktif_otomatis)
+    $stmtJ = $pdoBarang->prepare("SELECT * FROM jembatan_stok WHERE kemasan_tujuan_id = ?");
     $stmtJ->execute([$kemasanTujuanId]);
     $jembatan = $stmtJ->fetch(PDO::FETCH_ASSOC);
 

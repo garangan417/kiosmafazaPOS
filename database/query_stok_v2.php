@@ -142,9 +142,31 @@ if (!function_exists('catatMutasi')) {
             } elseif ($isMasuk) {
                 $stokSesudah = $stokSebelum + $qtyBase;
             } else {
+                // === OTOMATISASI JEMBATAN (JIKA STOK KURANG) ===
+                if ($stokSebelum < $qtyBase) {
+                    $stmtJ = $pdo->prepare("SELECT * FROM jembatan_stok WHERE kemasan_tujuan_id = ? AND is_aktif_otomatis = 1");
+                    $stmtJ->execute([$kemasanId]);
+                    $jembatan = $stmtJ->fetch(PDO::FETCH_ASSOC);
+
+                    if ($jembatan) {
+                        $ok = transferStokInternal(
+                            $pdo, 
+                            $jembatan['kemasan_sumber_id'], 
+                            $kemasanId, 
+                            1, 
+                            $jembatan['isi_konversi']
+                        );
+
+                        if ($ok) {
+                            $stmtS->execute([$barangId]);
+                            $stokSebelum = (int) $stmtS->fetchColumn();
+                        }
+                    }
+                }
+                // === END OTOMATISASI ===
+
                 $stokSesudah = $stokSebelum - $qtyBase;
                 
-                // PENGAMAN: Jika stok tidak cukup, batalkan
                 if ($stokSesudah < 0) {
                     if ($isTransaksiSendiri) $pdo->rollBack();
                     return $fail("Stok tidak cukup. Stok saat ini: {$stokSebelum} {$satuan}, butuh: {$qtyBase} {$satuan}.");
@@ -157,32 +179,6 @@ if (!function_exists('catatMutasi')) {
             // Insert mutasi
             $stmtM = $pdo->prepare("INSERT INTO stok_mutasi (barang_id, barang_kemasan_id, jenis_mutasi, qty_base, qty_kemasan, isi_saat_itu, satuan_saat_itu, stok_sebelum, stok_sesudah, ref_type, ref_id, keterangan) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
             $stmtM->execute([$barangId, $kemasanId, $jenisMutasi, $qtyBase, $qtyInput, $isi, $satuan, $stokSebelum, $stokSesudah, $refType, $refId, $keterangan !== '' ? $keterangan : null]);
-
-            // ============================================================
-            // OTOMATISASI JEMBATAN (Dipanggil SETELAH stok ter-update)
-            // ============================================================
-            // Cek apakah stok sekarang 0, DAN bukan mutasi dari transfer (biar gak loop)
-            if ($stokSesudah == 0 && strpos($jenisMutasi, 'TRANSFER') === false) {
-                $stmtJ = $pdo->prepare("SELECT * FROM jembatan_stok WHERE kemasan_tujuan_id = ? AND is_aktif_otomatis = 1");
-                $stmtJ->execute([$kemasanId]);
-                $jembatan = $stmtJ->fetch(PDO::FETCH_ASSOC);
-
-                if ($jembatan) {
-                    $ok = transferStokInternal(
-                        $pdo, 
-                        $jembatan['kemasan_sumber_id'], 
-                        $kemasanId, 
-                        1, 
-                        $jembatan['isi_konversi']
-                    );
-                    
-                    if ($ok) {
-                        $stmtS->execute([$barangId]);
-                        $stokSesudah = (int) $stmtS->fetchColumn();
-                    }
-                }
-            }
-            // ============================================================
 
             if ($isTransaksiSendiri) $pdo->commit();
 
