@@ -1672,8 +1672,8 @@ async function cetakLangsungThermal() {
 
   const payload = {
     toko_nama: sumberData?.toko_nama || 'KIOS MAFAZA',
-    toko_alamat: sumberData?.toko_alamat || 'Jl. Raya Utama No. 123',
-    toko_telp: sumberData?.toko_telp || '0812-3456-7890',
+    toko_alamat: sumberData?.toko_alamat || 'Jl.Jend Sudirman, No.3',
+    toko_telp: sumberData?.toko_telp || '0852-0530-7492',
     nota: ((document.getElementById('receiptNota')?.innerText || sumberData?.nota || '')).trim(),
     tanggal: ((document.getElementById('receiptTanggal')?.innerText || sumberData?.tanggal || '')).trim(),
     metode: ((document.getElementById('receiptMetode')?.innerText || sumberData?.metode || 'TUNAI')).trim(),
