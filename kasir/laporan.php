@@ -288,7 +288,10 @@ require_once BASE_PATH . 'partials/header.php';
       <div class="modal-body p-3" id="detail_struk_body">
         <div class="text-center py-4"><span class="spinner-border text-primary"></span> Loading detail...</div>
       </div>
-      <div class="modal-footer py-2">
+      <div class="modal-footer py-2 d-flex justify-content-between">
+        <button type="button" id="btnCetakUlangThermal" class="btn btn-success btn-sm fw-bold" onclick="cetakUlangStrukThermal()">
+          <i class="bi bi-printer me-1"></i> Cetak Ulang Struk
+        </button>
         <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Tutup</button>
       </div>
     </div>
@@ -297,9 +300,11 @@ require_once BASE_PATH . 'partials/header.php';
 
 <script>
 let currentPenjualanId = 0;
+let currentDetailStruk = null;
 
 function lihatDetailStruk(id) {
   currentPenjualanId = id;
+  currentDetailStruk = null;
   const modal = new bootstrap.Modal(document.getElementById('modalDetailStruk'));
   const body = document.getElementById('detail_struk_body');
   
@@ -310,6 +315,7 @@ function lihatDetailStruk(id) {
     .then(res => res.json())
     .then(res => {
       if (res.status === 'success') {
+        currentDetailStruk = res;
         document.getElementById('detail_faktur_title').innerText = 'Faktur: ' + res.header.no_faktur;
         
         let itemsHtml = '';
@@ -400,6 +406,107 @@ function lihatDetailStruk(id) {
         body.innerHTML = '<div class="alert alert-danger">' + res.message + '</div>';
       }
     });
+}
+
+async function cetakUlangStrukThermal() {
+  if (!currentDetailStruk || !currentDetailStruk.header) {
+    alert('Data struk belum siap.');
+    return;
+  }
+
+  const btn = document.getElementById('btnCetakUlangThermal');
+  const originalHtml = btn ? btn.innerHTML : '';
+
+  const hdr = currentDetailStruk.header;
+  const details = Array.isArray(currentDetailStruk.details) ? currentDetailStruk.details : [];
+
+  let totalNilaiRetur = 0;
+
+  const items = details.map((d) => {
+    const qtyAsli = parseFloat(d.qty || 1) || 1;
+    const qtyRetur = parseFloat(d.qty_retur || 0) || 0;
+    const qtyAktif = Math.max(0, qtyAsli - qtyRetur);
+    const harga = parseFloat(d.harga_jual || 0) || 0;
+
+    if (qtyRetur > 0) {
+      totalNilaiRetur += qtyRetur * harga;
+    }
+
+    const subtotal = qtyRetur > 0
+      ? Math.round(qtyAktif * harga)
+      : (parseFloat(d.subtotal || (qtyAsli * harga)) || 0);
+
+    const namaKemasan = d.nama_kemasan ? ` (${d.nama_kemasan})` : '';
+    const suffixRetur = qtyRetur > 0 ? ` [Retur ${qtyRetur}]` : '';
+
+    return {
+      nama: `${d.nama_barang || 'Item'}${namaKemasan}${suffixRetur}`,
+      qty: qtyRetur > 0 ? qtyAktif : qtyAsli,
+      harga,
+      subtotal
+    };
+  });
+
+  const totalBersih = Math.max(0, (parseFloat(hdr.total_bersih || 0) || 0) - totalNilaiRetur);
+  const bayar = parseFloat(hdr.bayar || 0) || 0;
+  const kembalian = parseFloat(hdr.kembalian || 0) || 0;
+
+  const payload = {
+    toko_nama: 'KIOS MAFAZA',
+    toko_alamat: 'Jl. Jend Sudirman ,langgar selatan',
+    toko_telp: '0852 0530 7492',
+    nota: (hdr.no_faktur || '') + ' (COPY)',
+    tanggal: hdr.tanggal || '',
+    metode: (hdr.metode_bayar || 'TUNAI').toUpperCase(),
+    pelanggan: hdr.pelanggan || '',
+    items,
+    total: totalBersih,
+    bayar,
+    kembalian
+  };
+
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Mencetak...';
+  }
+
+  try {
+    const res = await fetch('http://127.0.0.1:9100/print', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      throw new Error(data.message || 'Gagal mencetak ulang struk ke printer thermal');
+    }
+
+    if (typeof Swal !== 'undefined') {
+      Swal.fire({
+        icon: 'success',
+        title: 'Struk Tercetak Ulang',
+        text: data.message,
+        timer: 1200,
+        showConfirmButton: false
+      });
+    }
+  } catch (err) {
+    if (typeof Swal !== 'undefined') {
+      Swal.fire({
+        icon: 'error',
+        title: 'Gagal Cetak',
+        text: err.message
+      });
+    } else {
+      alert('Gagal cetak: ' + err.message);
+    }
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = originalHtml;
+    }
+  }
 }
 
 function prosesReturItem(penjualanId, penjualanDetailId, maxQty, namaBarang) {
