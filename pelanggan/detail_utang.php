@@ -181,11 +181,10 @@ $riwayat = array_reverse($riwayatAsc);
 
       </div>
 
-      <!-- Footer Modal -->
-           <!-- Footer Modal -->
+<!-- Footer Modal -->
       <div class="modal-footer bg-light d-flex justify-content-between">
-        <button type="button" class="btn btn-outline-dark btn-sm fw-bold" onclick="cetakDetailUtang(<?= $pelanggan['id']; ?>)">
-            <i class="bi bi-printer"></i> Cetak Rincian
+        <button type="button" id="btnCetakUtangThermal" class="btn btn-outline-dark btn-sm fw-bold" onclick="cetakThermalUtang(<?= $pelanggan['id']; ?>)">
+          <i class="bi bi-printer"></i> Cetak Rincian
         </button>
         <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Tutup</button>
       </div>
@@ -203,7 +202,6 @@ if (typeof formatInputRibuan !== 'function') {
   }
 }
 
-// Skrip penentuan waktu dari browser saat modal utang dikirim
 function setWaktuBrowserDetailUtang(formElement) {
   const now = new Date();
   const yyyy = now.getFullYear();
@@ -218,6 +216,61 @@ function setWaktuBrowserDetailUtang(formElement) {
     inputWaktu.value = `${yyyy}-${mm}-${dd} ${hh}:${ii}:${ss}`;
   }
 }
+
+async function cetakThermalUtang(id) {
+  const btn = document.getElementById('btnCetakUtangThermal');
+  const originalHtml = btn ? btn.innerHTML : '';
+
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Mencetak...';
+  }
+
+  try {
+    const resData = await fetch('<?= BASE_URL; ?>pelanggan/data_utang_cetak.php?id=' + encodeURIComponent(id));
+    const dataJson = await resData.json();
+    if (!resData.ok || !dataJson.ok) {
+      throw new Error(dataJson.message || 'Gagal mengambil data rincian utang');
+    }
+
+    const resPrint = await fetch('http://127.0.0.1:9100/print-utang', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(dataJson)
+    });
+
+    const printJson = await resPrint.json();
+    if (!resPrint.ok || !printJson.ok) {
+      throw new Error(printJson.message || 'Gagal mencetak rincian utang ke printer thermal');
+    }
+
+    if (typeof Swal !== 'undefined') {
+      Swal.fire({
+        icon: 'success',
+        title: 'Rincian Tercetak',
+        text: printJson.message,
+        timer: 1200,
+        showConfirmButton: false
+      });
+    }
+  } catch (err) {
+    if (typeof Swal !== 'undefined') {
+      Swal.fire({
+        icon: 'error',
+        title: 'Gagal Cetak',
+        text: err.message
+      });
+    } else {
+      alert('Gagal cetak: ' + err.message);
+    }
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = originalHtml;
+    }
+  }
+}
+
 
 function cetakDetailUtang(id) {
     // Buka halaman cetak di tab/jendela baru

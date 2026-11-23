@@ -592,8 +592,8 @@ title="Tambah Pelanggan Baru">
 
 <div class="modal-footer py-2 bg-light d-print-none">
 <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal" onclick="resetFocusScan()">Tutup</button>
-<button type="button" class="btn btn-sm btn-success fw-bold" onclick="window.print()">
-<i class="bi bi-printer me-1"></i> Cetak Struk
+<button type="button" id="btnCetakThermal" class="btn btn-sm btn-success fw-bold" onclick="cetakLangsungThermal()">
+  <i class="bi bi-printer me-1"></i> Cetak Struk
 </button>
 </div>
 </div>

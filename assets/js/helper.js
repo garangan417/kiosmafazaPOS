@@ -1561,3 +1561,230 @@ function submitBayarUtang() {
         console.error('Error bayar utang:', err);
     });
 }
+
+
+
+async function cetakLangsungThermal() {
+  const btn = document.getElementById('btnCetakThermal');
+  const originalHtml = btn ? btn.innerHTML : '';
+
+  const parseNum = (v) => {
+    if (typeof v === 'number') return isNaN(v) ? 0 : v;
+    const digits = String(v || '0').replace(/[^\d-]/g, '');
+    return parseFloat(digits || 0) || 0;
+  };
+
+  let items = [];
+
+  // 1. Coba ambil langsung dari state/objek transaksi terakhir di JS jika ada
+  const sumberData =
+    window.lastStrukData ||
+    window.lastTransaction ||
+    window.transaksiTerakhir ||
+    window.dataStruk ||
+    null;
+
+  if (sumberData && Array.isArray(sumberData.items) && sumberData.items.length > 0) {
+    items = sumberData.items.map((it) => {
+      const nama = String(it.nama || it.nama_barang || it.name || 'Item').trim();
+      const qty = parseFloat(it.qty ?? it.jumlah ?? 1) || 1;
+      const harga = parseNum(it.harga ?? it.harga_jual ?? it.price ?? 0);
+      const subtotal = it.subtotal !== undefined ? parseNum(it.subtotal) : qty * harga;
+      return { nama, qty, harga, subtotal };
+    });
+  } else {
+    // 2. Fallback baca dari #receiptItems dengan menyaring baris detail "1 x 43.000"
+    const rows = document.querySelectorAll('#receiptItems tr');
+    let currentItem = null;
+
+    rows.forEach((tr) => {
+      const cells = Array.from(tr.querySelectorAll('td'));
+      if (cells.length === 0) return;
+
+      const texts = cells.map((c) => (c.innerText || '').trim()).filter(Boolean);
+      const joined = texts.join(' ');
+      if (!joined) return;
+
+      const firstCell = cells[0];
+      const lastCell = cells[cells.length - 1];
+
+      // Cek apakah baris ini hanya baris detail "1 x 43.000" (tanpa nama barang baru)
+      const isDetailOnly =
+        /^\d+(?:[.,]\d+)?\s*[x×]\s*(?:rp\.?\s*)?[\d.]+$/i.test(firstCell.innerText.trim()) &&
+        !firstCell.dataset.nama;
+
+      if (isDetailOnly && currentItem) {
+        const match = firstCell.innerText.trim().match(/^(\d+(?:[.,]\d+)?)\s*[x×]\s*(?:rp\.?\s*)?([\d.]+)/i);
+        if (match) {
+          currentItem.qty = parseFloat(match[1].replace(',', '.')) || currentItem.qty;
+          currentItem.harga = parseNum(match[2]);
+        }
+        if (cells.length >= 2) {
+          const subVal = parseNum(lastCell.innerText);
+          if (subVal > 0) currentItem.subtotal = subVal;
+        }
+        if (!currentItem.subtotal) {
+          currentItem.subtotal = currentItem.qty * currentItem.harga;
+        }
+        return;
+      }
+
+      // Baris item utama
+      let nama = (firstCell.dataset.nama || '').trim();
+      let qty = parseFloat(firstCell.dataset.qty || 0);
+      let harga = parseFloat(firstCell.dataset.harga || 0);
+      let subtotal = cells.length >= 2 ? parseNum(lastCell.innerText) : 0;
+
+      if (!nama) {
+        const lines = (firstCell.innerText || '')
+          .split('\n')
+          .map((s) => s.trim())
+          .filter(Boolean);
+        nama = lines[0] || 'Item';
+
+        const matchInline = (firstCell.innerText || '').match(/(\d+(?:[.,]\d+)?)\s*[x×]\s*(?:rp\.?\s*)?([\d.]+)/i);
+        if (matchInline) {
+          if (!qty) qty = parseFloat(matchInline[1].replace(',', '.')) || 1;
+          if (!harga) harga = parseNum(matchInline[2]);
+        }
+      }
+
+      if (!qty || isNaN(qty)) qty = 1;
+      if ((!harga || isNaN(harga)) && subtotal > 0 && qty > 0) {
+        harga = Math.round(subtotal / qty);
+      }
+      if (!subtotal && harga > 0) {
+        subtotal = qty * harga;
+      }
+
+      currentItem = { nama, qty, harga, subtotal };
+      items.push(currentItem);
+    });
+  }
+
+  const ambilAngka = (id, fallbackVal = 0) => {
+    const el = document.getElementById(id);
+    if (el && (el.innerText || '').trim() !== '') {
+      return parseNum(el.innerText);
+    }
+    return parseNum(fallbackVal);
+  };
+
+  const payload = {
+    toko_nama: sumberData?.toko_nama || 'KIOS MAFAZA',
+    toko_alamat: sumberData?.toko_alamat || 'Jl. Raya Utama No. 123',
+    toko_telp: sumberData?.toko_telp || '0812-3456-7890',
+    nota: ((document.getElementById('receiptNota')?.innerText || sumberData?.nota || '')).trim(),
+    tanggal: ((document.getElementById('receiptTanggal')?.innerText || sumberData?.tanggal || '')).trim(),
+    metode: ((document.getElementById('receiptMetode')?.innerText || sumberData?.metode || 'TUNAI')).trim(),
+    pelanggan: ((document.getElementById('receiptPelanggan')?.innerText || sumberData?.pelanggan || '')).trim(),
+    items,
+    total: ambilAngka('receiptTotal', sumberData?.total),
+    bayar: ambilAngka('receiptBayar', sumberData?.bayar),
+    kembalian: ambilAngka('receiptKembalian', sumberData?.kembalian)
+  };
+
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Mencetak...';
+  }
+
+  try {
+    const res = await fetch('http://127.0.0.1:9100/print', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      throw new Error(data.message || 'Gagal mencetak ke printer thermal');
+    }
+
+    if (typeof Swal !== 'undefined') {
+      Swal.fire({
+        icon: 'success',
+        title: 'Struk Tercetak',
+        text: data.message,
+        timer: 1200,
+        showConfirmButton: false
+      });
+    }
+  } catch (err) {
+    if (typeof Swal !== 'undefined') {
+      Swal.fire({
+        icon: 'error',
+        title: 'Gagal Cetak',
+        text: err.message
+      });
+    } else {
+      alert('Gagal cetak: ' + err.message);
+    }
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = originalHtml;
+    }
+    if (typeof resetFocusScan === 'function') {
+      resetFocusScan();
+    }
+  }
+}
+
+
+async function cetakThermalUtang(id) {
+  const btn = document.getElementById('btnCetakUtangThermal');
+  const originalHtml = btn ? btn.innerHTML : '';
+
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Mencetak...';
+  }
+
+  try {
+    const resData = await fetch('<?= BASE_URL; ?>pelanggan/data_utang_cetak.php?id=' + encodeURIComponent(id));
+    const dataJson = await resData.json();
+    if (!resData.ok || !dataJson.ok) {
+      throw new Error(dataJson.message || 'Gagal mengambil data rincian utang');
+    }
+
+    const resPrint = await fetch('http://127.0.0.1:9100/print-utang', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(dataJson)
+    });
+
+    const printJson = await resPrint.json();
+    if (!resPrint.ok || !printJson.ok) {
+      throw new Error(printJson.message || 'Gagal mencetak rincian utang ke printer thermal');
+    }
+
+    if (typeof Swal !== 'undefined') {
+      Swal.fire({
+        icon: 'success',
+        title: 'Rincian Tercetak',
+        text: printJson.message,
+        timer: 1200,
+        showConfirmButton: false
+      });
+    }
+  } catch (err) {
+    if (typeof Swal !== 'undefined') {
+      Swal.fire({
+        icon: 'error',
+        title: 'Gagal Cetak',
+        text: err.message
+      });
+    } else {
+      alert('Gagal cetak: ' + err.message);
+    }
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = originalHtml;
+    }
+  }
+}
+
+
+
